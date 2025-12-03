@@ -1,27 +1,13 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Survivor Cat",
   "version": "1.0.0",
   "identifier": "com.phaser.game",
   "build": {
-    "frontendDist": "../dist",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devUrl": "http://localhost:5173"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "Survivor Cat",
-        "width": 1024,
-        "height": 576,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
   },
   "bundle": {
     "active": true,
@@ -36,10 +22,21 @@
     ],
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.13",
-      "exceptionDomain": "",
-      "signingIdentity": null,
-      "entitlements": null
+      "minimumSystemVersion": "10.13"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Survivor Cat",
+        "width": 1024,
+        "height": 576,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
     }
   }
 }
