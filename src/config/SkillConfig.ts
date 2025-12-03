@@ -187,18 +187,6 @@ export const SKILL_CONFIGS: SkillConfig[] = [
   
   // ========== 爆炸类技能 ==========
   {
-    id: 'explosion_basic',
-    name: '爆炸攻击',
-    description: '5% 概率触发爆炸',
-    type: SkillType.EXPLOSION,
-    color: '#ff6600',
-    effects: {
-      explosionChance: 0.05,
-      explosionDamage: 5,
-      explosionRadius: 80
-    }
-  },
-  {
     id: 'explosion_damage',
     name: '爆炸强化',
     description: '+3 爆炸伤害',

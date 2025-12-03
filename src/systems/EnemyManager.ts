@@ -347,6 +347,11 @@ export class EnemyManager {
     
     this.enemyGroup.getChildren().forEach((enemy: any) => {
       if (!enemy || !enemy.active || !enemy.body) return;
+      // 如果敌人在被玩家碰撞后处于击退/冷却状态，跳过 AI 控制（避免覆盖击退速度）
+      if ((enemy as any)._playerHitCooldown) {
+        // console.log('Skipping AI for knocked back enemy');
+        return;
+      }
       
       const distance = Phaser.Math.Distance.Between(
         enemy.x,

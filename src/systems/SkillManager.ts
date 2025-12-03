@@ -1,4 +1,4 @@
-import { SkillConfig, SkillType } from '../config/SkillConfig';
+import { SkillConfig, SkillType, SKILL_CONFIGS } from '../config/SkillConfig';
 
 // 技能管理器 - 管理玩家已学习的技能和属性
 export class SkillManager {
@@ -12,6 +12,7 @@ export class SkillManager {
     projectileDamage: 1,       // 子弹伤害（基础1）
     projectileSpeedMultiplier: 1, // 子弹速度倍数
     attackSpeedMultiplier: 1,  // 攻击速度倍数（越大越快）
+    projectileSplit: 0,        // 子弹分裂数量（基础0）
     
     // 轨道属性
     orbitalCount: 0,           // 轨道球数量（基础0）
@@ -47,80 +48,85 @@ export class SkillManager {
     this.skillLevels.set(skill.id, currentLevel + 1);
     
     if (!skill.effects) return;
-    
-    const effects = skill.effects;
-    
-    // 应用子弹类效果
-    if (effects.projectileCount !== undefined) {
-      this.stats.projectileCount += effects.projectileCount;
+    this.applyEffects(skill.effects);
+  }
+
+  // 只重置 stats 并保留已学技能等级，然后重新应用已学技能的效果
+  resetStatsKeepLevels(): void {
+    this.stats = {
+      projectileCount: 1,
+      projectileDamage: 1,
+      projectileSpeedMultiplier: 1,
+      attackSpeedMultiplier: 1,
+      projectileSplit: 0,
+
+      orbitalCount: 0,
+      orbitalDamage: 1,
+      orbitalRadius: 100,
+      orbitalSpeedMultiplier: 1,
+
+      laserCount: 0,
+      laserDamage: 1,
+      laserDuration: 500,
+      laserInterval: 3000,
+
+      explosionEnabled: false,
+      explosionDamage: 5,
+      explosionRadius: 80,
+      explosionChance: 0,
+
+      moveSpeed: 200,
+      maxHP: 100,
+      expGainMultiplier: 1,
+      pickupRange: 100
+    };
+
+    // 重新应用已学技能的效果（根据 skillLevels）
+    for (const [skillId, level] of this.skillLevels.entries()) {
+      const cfg = SKILL_CONFIGS.find(s => s.id === skillId);
+      if (!cfg || !cfg.effects) continue;
+      for (let i = 0; i < level; i++) {
+        this.applyEffects(cfg.effects);
+      }
     }
-    if (effects.projectileDamage !== undefined) {
-      this.stats.projectileDamage += effects.projectileDamage;
-    }
-    if (effects.projectileSpeed !== undefined) {
-      this.stats.projectileSpeedMultiplier += effects.projectileSpeed;
-    }
-    if (effects.attackSpeed !== undefined) {
-      this.stats.attackSpeedMultiplier += effects.attackSpeed;
-    }
-    
-    // 应用轨道类效果
-    if (effects.orbitalCount !== undefined) {
-      this.stats.orbitalCount += effects.orbitalCount;
-    }
-    if (effects.orbitalDamage !== undefined) {
-      this.stats.orbitalDamage += effects.orbitalDamage;
-    }
-    if (effects.orbitalRadius !== undefined) {
-      this.stats.orbitalRadius += effects.orbitalRadius;
-    }
-    if (effects.orbitalSpeed !== undefined) {
-      this.stats.orbitalSpeedMultiplier += effects.orbitalSpeed;
-    }
-    
-    // 应用射线类效果
-    if (effects.laserCount !== undefined) {
-      this.stats.laserCount += effects.laserCount;
-    }
-    if (effects.laserDamage !== undefined) {
-      this.stats.laserDamage += effects.laserDamage;
-    }
-    if (effects.laserDuration !== undefined) {
-      this.stats.laserDuration += effects.laserDuration;
-    }
-    if (effects.laserInterval !== undefined) {
-      this.stats.laserInterval += effects.laserInterval;
-      // 确保最小值
+  }
+
+  // 仅应用效果（不改变技能等级），供复算使用
+  private applyEffects(effects: SkillConfig['effects'] | undefined): void {
+    if (!effects) return;
+    const e = effects as any;
+
+    if (e.projectileCount !== undefined) this.stats.projectileCount += e.projectileCount;
+    if (e.projectileDamage !== undefined) this.stats.projectileDamage += e.projectileDamage;
+    if (e.projectileSpeed !== undefined) this.stats.projectileSpeedMultiplier += e.projectileSpeed;
+    if (e.attackSpeed !== undefined) this.stats.attackSpeedMultiplier += e.attackSpeed;
+    if (e.projectileSplit !== undefined) this.stats.projectileSplit += e.projectileSplit;
+
+    if (e.orbitalCount !== undefined) this.stats.orbitalCount += e.orbitalCount;
+    if (e.orbitalDamage !== undefined) this.stats.orbitalDamage += e.orbitalDamage;
+    if (e.orbitalRadius !== undefined) this.stats.orbitalRadius += e.orbitalRadius;
+    if (e.orbitalSpeed !== undefined) this.stats.orbitalSpeedMultiplier += e.orbitalSpeed;
+
+    if (e.laserCount !== undefined) this.stats.laserCount += e.laserCount;
+    if (e.laserDamage !== undefined) this.stats.laserDamage += e.laserDamage;
+    if (e.laserDuration !== undefined) this.stats.laserDuration += e.laserDuration;
+    if (e.laserInterval !== undefined) {
+      this.stats.laserInterval += e.laserInterval;
       this.stats.laserInterval = Math.max(1000, this.stats.laserInterval);
     }
-    
-    // 应用爆炸类效果
-    if (effects.explosionChance !== undefined) {
+
+    if (e.explosionChance !== undefined) {
       this.stats.explosionEnabled = true;
-      this.stats.explosionChance += effects.explosionChance;
-      // 限制最大概率
+      this.stats.explosionChance += e.explosionChance;
       this.stats.explosionChance = Math.min(1, this.stats.explosionChance);
     }
-    if (effects.explosionDamage !== undefined) {
-      this.stats.explosionDamage += effects.explosionDamage;
-    }
-    if (effects.explosionRadius !== undefined) {
-      this.stats.explosionRadius += effects.explosionRadius;
-    }
-    
-    // 应用属性增强
-    if (effects.moveSpeed !== undefined) {
-      this.stats.moveSpeed += effects.moveSpeed;
-    }
-    if (effects.maxHP !== undefined) {
-      this.stats.maxHP += effects.maxHP;
-    }
-    if (effects.expGain !== undefined) {
-      this.stats.expGainMultiplier += effects.expGain;
-    }
-    if (effects.pickupRange !== undefined) {
-      this.stats.pickupRange += effects.pickupRange;
-    }
+    if (e.explosionDamage !== undefined) this.stats.explosionDamage += e.explosionDamage;
+    if (e.explosionRadius !== undefined) this.stats.explosionRadius += e.explosionRadius;
+
+    if (e.moveSpeed !== undefined) this.stats.moveSpeed += e.moveSpeed;
+    if (e.maxHP !== undefined) this.stats.maxHP += e.maxHP;
+    if (e.expGain !== undefined) this.stats.expGainMultiplier += e.expGain;
+    if (e.pickupRange !== undefined) this.stats.pickupRange += e.pickupRange;
   }
   
   // 获取技能当前等级
@@ -148,6 +154,7 @@ export class SkillManager {
       projectileDamage: 1,
       projectileSpeedMultiplier: 1,
       attackSpeedMultiplier: 1,
+      projectileSplit: 0,
       
       orbitalCount: 0,
       orbitalDamage: 1,

@@ -178,12 +178,12 @@ export class MenuScene extends Phaser.Scene {
         centerY + 20,
         '继续游戏',
         {
-          fontSize: '36px',
+          fontSize: '28px',
           color: '#00ff00',
           fontFamily: 'Arial',
           fontStyle: 'bold',
           backgroundColor: '#003300',
-          padding: { x: 30, y: 15 }
+          padding: { x: 25, y: 12 }
         }
       );
       this.continueButton.setOrigin(0.5);
@@ -234,6 +234,37 @@ export class MenuScene extends Phaser.Scene {
         // 确认重置存档
         this.showNewGameConfirmation();
       });
+      
+      // 装备管理按钮
+      const inventoryButton = this.add.text(
+        centerX,
+        centerY + 140,
+        '📦 装备管理',
+        {
+          fontSize: '24px',
+          color: '#00aaff',
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          backgroundColor: '#002244',
+          padding: { x: 20, y: 10 }
+        }
+      );
+      inventoryButton.setOrigin(0.5);
+      inventoryButton.setInteractive({ useHandCursor: true });
+      
+      inventoryButton.on('pointerover', () => {
+        inventoryButton.setScale(1.1);
+        inventoryButton.setStyle({ color: '#ffff00', backgroundColor: '#003366' });
+      });
+      
+      inventoryButton.on('pointerout', () => {
+        inventoryButton.setScale(1);
+        inventoryButton.setStyle({ color: '#00aaff', backgroundColor: '#002244' });
+      });
+      
+      inventoryButton.on('pointerdown', () => {
+        this.openInventory();
+      });
     } else {
       // 开始按钮（无存档时）
       this.startButton = this.add.text(
@@ -275,37 +306,6 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-ENTER', () => {
       this.startGame();
     });
-    
-    // 操作说明
-    const instructionY = hasSave ? centerY + 150 : centerY + 120;
-    this.instructionsText = this.add.text(
-      centerX,
-      instructionY,
-      '操作说明:\n' +
-      'WASD 或 方向键 - 移动\n' +
-      'ESC 或 P - 暂停游戏\n' +
-      '击败敌人获取经验和金币！',
-      {
-        fontSize: '18px',
-        color: '#aaaaaa',
-        fontFamily: 'Arial',
-        align: 'center',
-        lineSpacing: 8
-      }
-    );
-    this.instructionsText.setOrigin(0.5);
-    
-    // 版本信息
-    const versionText = this.add.text(
-      10,
-      this.cameras.main.height - 30,
-      'v1.1.0 - Survivor Cat with Save System',
-      {
-        fontSize: '14px',
-        color: '#666666',
-        fontFamily: 'Arial'
-      }
-    );
     
     // 创建装饰性的史莱姆动画（如果资源可用）
     this.createDecorativeSlimes();
@@ -467,7 +467,6 @@ export class MenuScene extends Phaser.Scene {
     if (this.textures.exists('bugbit') && !this.anims.exists('bugbit-walk')) {
       try {
         const frameCount = this.textures.get('bugbit').frameTotal;
-        console.log('bugbit frame count:', frameCount);
         this.anims.create({
           key: 'bugbit-walk',
           frames: this.anims.generateFrameNumbers('bugbit', { start: 0, end: Math.min(3, frameCount - 1) }),
@@ -482,7 +481,6 @@ export class MenuScene extends Phaser.Scene {
     if (this.textures.exists('pebblin') && !this.anims.exists('pebblin-idle')) {
       try {
         const frameCount = this.textures.get('pebblin').frameTotal;
-        console.log('pebblin frame count:', frameCount);
         this.anims.create({
           key: 'pebblin-idle',
           frames: this.anims.generateFrameNumbers('pebblin', { start: 0, end: Math.min(3, frameCount - 1) }),
@@ -497,7 +495,6 @@ export class MenuScene extends Phaser.Scene {
     if (this.textures.exists('spora') && !this.anims.exists('spora-move')) {
       try {
         const frameCount = this.textures.get('spora').frameTotal;
-        console.log('spora frame count:', frameCount);
         this.anims.create({
           key: 'spora-move',
           frames: this.anims.generateFrameNumbers('spora', { start: 0, end: Math.min(3, frameCount - 1) }),
@@ -512,7 +509,6 @@ export class MenuScene extends Phaser.Scene {
     if (this.textures.exists('spookmoth') && !this.anims.exists('spookmoth-fly')) {
       try {
         const frameCount = this.textures.get('spookmoth').frameTotal;
-        console.log('spookmoth frame count:', frameCount);
         this.anims.create({
           key: 'spookmoth-fly',
           frames: this.anims.generateFrameNumbers('spookmoth', { start: 0, end: Math.min(3, frameCount - 1) }),
@@ -647,5 +643,14 @@ export class MenuScene extends Phaser.Scene {
     
     // 播放开始音效（如果有的话）
     // this.sound.play('start-sound');
+  }
+  
+  openInventory() {
+    // 切换到装备管理场景
+    this.cameras.main.fadeOut(300, 0, 0, 0);
+    
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start('InventoryScene');
+    });
   }
 }

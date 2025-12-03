@@ -1,4 +1,6 @@
 // 存档管理系统 - 管理游戏存档和读取
+import { AffixInstance, Rarity } from '../config/AffixConfig';
+
 export interface PlayerSaveData {
   totalCoins: number;           // 总金币数
   permanentUpgrades: {          // 永久升级（可扩展）
@@ -13,6 +15,15 @@ export interface PlayerSaveData {
     gamesPlayed: number;        // 游戏次数
   };
   lastPlayed: string;          // 最后游玩时间
+  // 装备插槽（四个位置） - 每个槽位存储 { id, affixes, quality }
+  equipment: {
+    ring1: { id: string | null; affixes: AffixInstance[]; quality?: Rarity };
+    ring2: { id: string | null; affixes: AffixInstance[]; quality?: Rarity };
+    necklace: { id: string | null; affixes: AffixInstance[]; quality?: Rarity };
+    cloth: { id: string | null; affixes: AffixInstance[]; quality?: Rarity };
+  };
+  // 背包：存放已获得但未装备的装备实例
+  inventory?: { id: string; affixes: AffixInstance[]; quality?: Rarity }[];
 }
 
 export class SaveManager {
@@ -33,7 +44,15 @@ export class SaveManager {
         maxWaveReached: 0,
         gamesPlayed: 0
       },
-      lastPlayed: new Date().toISOString()
+      lastPlayed: new Date().toISOString(),
+      equipment: {
+        ring1: { id: null, affixes: [] },
+        ring2: { id: null, affixes: [] },
+        necklace: { id: null, affixes: [] },
+        cloth: { id: null, affixes: [] }
+      }
+      ,
+      inventory: []
     };
   }
   
@@ -54,7 +73,12 @@ export class SaveManager {
           statistics: {
             ...this.getDefaultSave().statistics,
             ...(parsed.statistics || {})
-          }
+          },
+          equipment: {
+            ...this.getDefaultSave().equipment,
+            ...(parsed.equipment || {})
+          },
+          inventory: (parsed.inventory || this.getDefaultSave().inventory || [])
         };
       }
     } catch (error) {
@@ -73,6 +97,29 @@ export class SaveManager {
       console.error('保存存档失败:', error);
       return false;
     }
+  }
+
+  // 添加装备到背包
+  static addToInventory(item: { id: string; affixes: AffixInstance[]; quality?: Rarity }): void {
+    const save = this.loadSave();
+    if (!save.inventory) save.inventory = [];
+    save.inventory.push(item);
+    this.saveSave(save);
+  }
+
+  // 从背包移除指定索引的物品（返回是否成功）
+  static removeFromInventoryAt(index: number): boolean {
+    const save = this.loadSave();
+    if (!save.inventory || index < 0 || index >= save.inventory.length) return false;
+    save.inventory.splice(index, 1);
+    this.saveSave(save);
+    return true;
+  }
+
+  // 获取背包列表（引用快照）
+  static getInventory(): { id: string; affixes: AffixInstance[]; quality?: Rarity }[] {
+    const save = this.loadSave();
+    return save.inventory || [];
   }
   
   // 增加金币

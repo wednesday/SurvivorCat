@@ -1,9 +1,12 @@
 import Phaser from "phaser";
 import { SkillManager } from "../systems/SkillManager";
+import { EquipmentManager } from "../systems/EquipmentManager";
 import { MapManager } from "../systems/MapManager";
 import { ExplosionSystem } from "../systems/ExplosionSystem";
 import { EnemyManager, Enemy } from "../systems/EnemyManager";
 import { getRandomSkills, SkillConfig } from "../config/SkillConfig";
+import { EQUIPMENT_CONFIGS, getEquipmentById } from '../config/EquipmentConfig';
+import { rollAffixes, AffixInstance, rollEquipmentQuality, Rarity, getQualityColor, generateEquipmentName } from '../config/AffixConfig';
 import { SaveManager } from "../systems/SaveManager";
 import { CUSTOM_DECORATION_CONFIG } from "../config/MapDecorationConfig";
 
@@ -23,6 +26,7 @@ export class GameScene extends Phaser.Scene {
   private explosionSystem!: ExplosionSystem;
   private enemyManager!: EnemyManager;
   private mapManager!: MapManager;
+  private equipmentManager!: EquipmentManager;
   
   // 加载进度UI
   private loadingOverlay: Phaser.GameObjects.Rectangle | null = null;
@@ -287,6 +291,18 @@ export class GameScene extends Phaser.Scene {
     // 初始化技能管理系统
     this.skillManager = new SkillManager();
     this.explosionSystem = new ExplosionSystem(this);
+    // 初始化装备管理器（会从存档加载已装备物品并将效果应用到 skillManager）
+    this.equipmentManager = new EquipmentManager(this.skillManager);
+
+    // 设置装备变化回调，用于同步轨道球数量
+    this.equipmentManager.setEquipmentChangeCallback(() => {
+      this.syncOrbitalCount();
+    });
+
+    // 同步轨道球数量
+    this.syncOrbitalCount();
+    // 确保玩家当前生命值基于装备和技能的最大生命值
+    this.playerHP = this.skillManager.stats.maxHP;
     
     // 初始化无限地图管理器
     this.mapManager = new MapManager(this, CUSTOM_DECORATION_CONFIG);
@@ -652,8 +668,8 @@ export class GameScene extends Phaser.Scene {
       { label: '攻击速度', value: (1000 / this.skillManager.getProjectileRate(1000)).toFixed(2) + '/s' },
       { label: '轨道球数量', value: this.orbitals.length.toString() },
       { label: '轨道球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
-      { label: '轨道球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
-      { label: '轨道球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
+      { label: '轨道轨道半径', value: this.skillManager.stats.orbitalRadius.toString() },
+      { label: '轨道球速度', value: this.skillManager.stats.orbitalSpeedMultiplier.toString() },
       { label: '激光数量', value: this.skillManager.stats.laserCount.toString() },
       { label: '激光伤害', value: this.skillManager.stats.laserDamage.toString() },
       { label: '拾取范围', value: this.skillManager.stats.pickupRange.toFixed(0) },
@@ -962,6 +978,57 @@ export class GameScene extends Phaser.Scene {
   }
 
   hitEnemy(projectile: any, enemy: any) {
+    // 子弹分裂逻辑 - 在销毁前检查
+    if (this.skillManager.stats.projectileSplit > 0 && !(projectile as any).isSplitProjectile) {
+      const splitCount = this.skillManager.stats.projectileSplit;
+      const angleStep = (Math.PI * 2) / splitCount;
+      // 添加随机偏移量，使分裂方向更加随机
+      const randomOffset = Math.random() * Math.PI * 2;
+      
+      for (let i = 0; i < splitCount; i++) {
+        const splitAngle = angleStep * i + randomOffset;
+        
+        // 创建分裂子弹
+        const splitProjectile = this.add.sprite(
+          projectile.x,
+          projectile.y,
+          'bullet-sheet',
+          20
+        );
+        
+        // 播放子弹动画
+        const bulletAnimKey = 'bullet-type4-anim';
+        if (this.anims.exists(bulletAnimKey)) {
+          splitProjectile.play(bulletAnimKey);
+        }
+        splitProjectile.setScale(1.2); // 分裂子弹稍小
+        
+        this.physics.add.existing(splitProjectile);
+        this.projectiles.add(splitProjectile);
+        
+        // 标记为分裂子弹，防止无限分裂
+        (splitProjectile as any).isSplitProjectile = true;
+        
+        // 设置分裂子弹的速度
+        const splitBody = splitProjectile.body as Phaser.Physics.Arcade.Body;
+        if (splitBody) {
+          const speed = 300 * this.skillManager.stats.projectileSpeedMultiplier;
+          splitBody.setVelocity(
+            Math.cos(splitAngle) * speed,
+            Math.sin(splitAngle) * speed
+          );
+          splitProjectile.setRotation(splitAngle);
+        }
+        
+        // 1.5秒后销毁分裂子弹
+        this.time.delayedCall(1500, () => {
+          if (splitProjectile.active) {
+            splitProjectile.destroy();
+          }
+        });
+      }
+    }
+    
     projectile.destroy();
 
     const damage = this.skillManager.stats.projectileDamage;
@@ -998,8 +1065,14 @@ export class GameScene extends Phaser.Scene {
       const isBoss = (enemy as any).enemyConfig?.isBoss || false;
 
       // Boss掉落宝箱和更多金币，普通敌人掉落经验球和金币
-      if (isBoss) {
-        this.spawnTreasureChest(enemy.x, enemy.y);
+      if (isBoss && !(enemy as any).dropped) {
+        // 标记已掉落，防止重复掉落
+        (enemy as any).dropped = true;
+        // 为Boss生成一件随机装备并附带词条（保存到宝箱上）
+        const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+        const quality = rollEquipmentQuality();
+        const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+        this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
@@ -1049,12 +1122,17 @@ export class GameScene extends Phaser.Scene {
       const isBoss = (enemy as any).enemyConfig?.isBoss || false;
 
       // Boss掉落宝箱和更多金币，普通敌人掉落经验球和金币
-      if (isBoss) {
-        this.spawnTreasureChest(enemy.x, enemy.y);
+      if (isBoss && !(enemy as any).dropped) {
+        // 标记已掉落，防止重复掉落
+        (enemy as any).dropped = true;
+        const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+        const quality = rollEquipmentQuality();
+        const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+        this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
-      } else {
+      } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
         // 30%概率掉落金币
@@ -1112,12 +1190,17 @@ export class GameScene extends Phaser.Scene {
       const isBoss = (enemy as any).enemyConfig?.isBoss || false;
 
       // Boss掉落宝箱和更多金币，普通敌人掉落经验球和金币
-      if (isBoss) {
-        this.spawnTreasureChest(enemy.x, enemy.y);
+      if (isBoss && !(enemy as any).dropped) {
+        // 标记已掉落，防止重复掉落
+        (enemy as any).dropped = true;
+        const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+        const quality = rollEquipmentQuality();
+        const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+        this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
-      } else {
+      } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
         // 30%概率掉落金币
@@ -1139,11 +1222,46 @@ export class GameScene extends Phaser.Scene {
 
   hitPlayer(player: any, enemy: any) {
     const expValue = (enemy as any).expValue || 1;
-    enemy.destroy();
+    // 通用处理：不再在玩家碰撞时销毁怪物（Boss 或普通怪）
+    // 为避免多次触发，使用每个怪物上的临时冷却标志
+    if ((enemy as any)._playerHitCooldown) {
+      return;
+    }
+    (enemy as any)._playerHitCooldown = true;
+    
+    // 对玩家造成伤害并更新 UI
     this.playerHP -= 10;
-    this.hpText.setText(
-      `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`
-    );
+    this.hpText.setText(`HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`);
+
+    // 对敌人施加向外击退 - 直接改变位置而不是速度
+    const body = enemy.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      
+      // 计算击退距离（像素）- 调整为更合理的距离
+      const knockbackDistance = (enemy as any).enemyConfig?.isBoss ? 60 : 40;
+      const newX = enemy.x + (dx / len) * knockbackDistance;
+      const newY = enemy.y + (dy / len) * knockbackDistance;
+      
+      // 直接设置位置
+      enemy.setPosition(newX, newY);
+      
+      // 同时设置速度为0，防止AI立即覆盖
+      body.setVelocity(0, 0);
+      
+      // 添加视觉反馈 - 怪物变红表示被击退
+      enemy.setTint(0xff6666);
+      
+      // 500ms后恢复AI控制
+      this.time.delayedCall(500, () => {
+        if (enemy.active) {
+          (enemy as any)._playerHitCooldown = false;
+          enemy.clearTint();
+        }
+      });
+    }
 
     // 设置受伤状态
     this.isPlayerHurt = true;
@@ -1458,7 +1576,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  spawnTreasureChest(x: number, y: number) {
+  spawnTreasureChest(x: number, y: number, equipmentPayload?: { id: string; affixes: AffixInstance[]; quality?: Rarity }) {
     // 创建宝箱精灵
     const chest = this.add.sprite(x, y, 'treasure-chest');
     chest.setScale(1.5);
@@ -1468,6 +1586,10 @@ export class GameScene extends Phaser.Scene {
 
     // 添加宝箱标记属性
     (chest as any).isChest = true;
+    // 如果有装备掉落数据，附加到宝箱上
+    if (equipmentPayload) {
+      (chest as any).equipmentPayload = equipmentPayload;
+    }
 
 
     // 跳动效果
@@ -1512,6 +1634,9 @@ export class GameScene extends Phaser.Scene {
   openTreasureChest(player: any, chest: any) {
     if (!chest.active || !(chest as any).isChest) return;
 
+    // 保存是否有装备掉落到本次宝箱
+    const payload = (chest as any).equipmentPayload as { id: string; affixes: AffixInstance[]; quality?: Rarity } | undefined;
+
     // 销毁宝箱
     chest.destroy();
 
@@ -1536,36 +1661,219 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // 显示开启宝箱提示
-    const text = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 200,
-      "⭐ 宝箱已开启! ⭐",
-      {
-        fontSize: "48px",
-        color: "#ffd700",
-        fontFamily: "Arial",
-        fontStyle: "bold",
-        stroke: "#000000",
-        strokeThickness: 6,
+    // 如果宝箱包含装备掉落，则弹出对话供玩家选择（存入背包 / 丢弃），否则继续原来的宝箱升级流程
+    if (payload && payload.id) {
+      const eq = getEquipmentById(payload.id);
+      const quality = payload.quality !== undefined ? payload.quality : Rarity.Common;
+      const title = eq ? generateEquipmentName(eq.name, payload.affixes || [], quality) : `未知装备 (${payload.id})`;
+      const titleColor = getQualityColor(quality);
+      const affixLines = (payload.affixes || []).map(a => `${a.name} (${a.rarity})`).join('\n');
+
+      // 直接将装备放入背包
+      let autoStored = false;
+      try {
+        SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality });
+        autoStored = true;
+      } catch (e) {
+        console.warn('[openTreasureChest] Failed to auto-store equipment', e);
       }
-    );
-    text.setOrigin(0.5);
-    text.setScrollFactor(0);
 
-    this.tweens.add({
-      targets: text,
-      alpha: 0,
-      y: text.y - 50,
-      duration: 2000,
-      ease: "Power2",
-      onComplete: () => {
-        if (text.active) text.destroy();
-      },
-    });
+      // 暂停游戏
+      this.physics.pause();
+      this.isPaused = true;
 
-    // 提供2次升级选项
-    this.showTreasureUpgrade(1);
+      // 弹出装备详情对话框（居中）
+      const cx = this.cameras.main.centerX;
+      const cy = this.cameras.main.centerY;
+      const dlgW = 500;
+      const dlgH = 280 + (payload.affixes ? payload.affixes.length * 24 : 0);
+      
+      // 背景
+      const dlgBg = this.add.rectangle(cx, cy, dlgW, dlgH, 0x1a1a2e, 0.98).setDepth(3000).setScrollFactor(0);
+      dlgBg.setStrokeStyle(3, 0xffd700);
+      
+      // 标题
+      const dlgTitle = this.add.text(cx, cy - dlgH / 2 + 30, '🎁 获得装备 🎁', { 
+        fontSize: '26px', 
+        color: '#ffd700', 
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+      
+      // 装备名称
+      const nameText = this.add.text(cx, cy - dlgH / 2 + 75, title, { 
+        fontSize: '22px', 
+        color: titleColor, 
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+      
+      // 装备描述
+      const descText = this.add.text(cx - dlgW / 2 + 30, cy - dlgH / 2 + 115, eq?.description || '', { 
+        fontSize: '16px', 
+        color: '#cccccc', 
+        fontFamily: 'Arial',
+        wordWrap: { width: dlgW - 60 }
+      }).setDepth(3001).setScrollFactor(0);
+
+      // 词条列表
+      const affStartY = cy - dlgH / 2 + 155;
+      const affixTexts: Phaser.GameObjects.Text[] = [];
+      if (payload.affixes && payload.affixes.length > 0) {
+        const affixTitle = this.add.text(cx - dlgW / 2 + 30, affStartY - 10, '词条:', { 
+          fontSize: '16px', 
+          color: '#aaaaaa', 
+          fontFamily: 'Arial' 
+        }).setDepth(3001).setScrollFactor(0);
+        affixTexts.push(affixTitle);
+        
+        payload.affixes.forEach((inst, i) => {
+          const valStr = Object.entries(inst.values).map(([k, v]) => `${k}: ${v}`).join(', ');
+          const rarityColor = inst.rarity === Rarity.Legendary ? '#ff6600' : inst.rarity === Rarity.Epic ? '#9c27b0' : inst.rarity === Rarity.Rare ? '#2196f3' : '#4caf50';
+          const txt = this.add.text(cx - dlgW / 2 + 40, affStartY + 15 + i * 24, `• ${inst.name} (${valStr})`, { 
+            fontSize: '15px', 
+            color: rarityColor, 
+            fontFamily: 'Arial' 
+          }).setDepth(3001).setScrollFactor(0);
+          affixTexts.push(txt);
+        });
+      }
+
+      // 提示文字
+      const hintText = this.add.text(cx, cy + dlgH / 2 - 80, autoStored ? '装备已自动放入背包' : '请选择操作', { 
+        fontSize: '14px', 
+        color: autoStored ? '#4caf50' : '#aaaaaa', 
+        fontFamily: 'Arial',
+        fontStyle: 'italic'
+      }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+
+      // 按钮：确认（放入背包） / 丢弃
+      const btnConfirm = this.add.text(cx - 80, cy + dlgH / 2 - 40, '确认', { 
+        fontSize: '20px', 
+        color: '#ffffff', 
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+        backgroundColor: '#4caf50', 
+        padding: { x: 24, y: 10 } 
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(3001).setScrollFactor(0);
+      
+      const btnDiscard = this.add.text(cx + 80, cy + dlgH / 2 - 40, '丢弃', { 
+        fontSize: '20px', 
+        color: '#ffffff', 
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+        backgroundColor: '#f44336', 
+        padding: { x: 24, y: 10 } 
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(3001).setScrollFactor(0);
+
+      const allElements = [dlgBg, dlgTitle, nameText, descText, hintText, btnConfirm, btnDiscard, ...affixTexts];
+
+      const cleanupDlg = () => {
+        // 强制销毁所有元素
+        allElements.forEach(el => { 
+          if (el) {
+            el.removeAllListeners();
+            if (el.active) {
+              el.destroy(true);
+            }
+          }
+        });
+        // 清空数组
+        allElements.length = 0;
+        affixTexts.length = 0;
+        // 恢复游戏
+        this.physics.resume();
+        this.isPaused = false;
+      };
+
+      btnConfirm.on('pointerdown', () => {
+        // 确认放入背包（已经自动放入了）
+        cleanupDlg();
+        const info = this.add.text(cx, cy - 100, `✓ 已确认放入背包`, { 
+          fontSize: '22px', 
+          color: '#4caf50', 
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 4
+        }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+        this.tweens.add({ 
+          targets: info, 
+          alpha: 0, 
+          y: info.y - 50, 
+          duration: 2000, 
+          ease: 'Power2', 
+          onComplete: () => { if (info.active) info.destroy(); }
+        });
+      });
+
+      btnDiscard.on('pointerdown', () => {
+        // 丢弃装备（从背包移除）
+        if (autoStored) {
+          try {
+            const inv = SaveManager.getInventory();
+            const idx = inv.findIndex(it => it.id === payload.id && JSON.stringify(it.affixes) === JSON.stringify(payload.affixes));
+            if (idx >= 0) {
+              inv.splice(idx, 1);
+              const save = SaveManager.loadSave();
+              (save as any).inventory = inv;
+              SaveManager.saveSave(save as any);
+            }
+          } catch (e) {
+            console.warn('[openTreasureChest] Failed to remove equipment', e);
+          }
+        }
+        
+        cleanupDlg();
+        const info = this.add.text(cx, cy - 100, `✗ 已丢弃装备`, { 
+          fontSize: '22px', 
+          color: '#f44336', 
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 4
+        }).setOrigin(0.5).setDepth(3001).setScrollFactor(0);
+        this.tweens.add({ 
+          targets: info, 
+          alpha: 0, 
+          y: info.y - 50, 
+          duration: 2000, 
+          ease: 'Power2', 
+          onComplete: () => { if (info.active) info.destroy(); }
+        });
+      });
+    } else {
+      // 显示开启宝箱提示
+      const text = this.add.text(
+        this.cameras.main.centerX,
+        this.cameras.main.centerY - 200,
+        "⭐ 宝箱已开启! ⭐",
+        {
+          fontSize: "48px",
+          color: "#ffd700",
+          fontFamily: "Arial",
+          fontStyle: "bold",
+          stroke: "#000000",
+          strokeThickness: 6,
+        }
+      );
+      text.setOrigin(0.5);
+      text.setScrollFactor(0);
+
+      this.tweens.add({
+        targets: text,
+        alpha: 0,
+        y: text.y - 50,
+        duration: 2000,
+        ease: "Power2",
+        onComplete: () => {
+          if (text.active) text.destroy();
+        },
+      });
+
+      // 提供2次升级选项
+      this.showTreasureUpgrade(1);
+    }
   }
 
   showTreasureUpgrade(upgradeCount: number) {
@@ -1714,6 +2022,27 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // 同步轨道球数量与 skillManager.stats.orbitalCount
+  syncOrbitalCount() {
+    const targetCount = this.skillManager.stats.orbitalCount;
+    const currentCount = this.orbitals.length;
+
+    if (currentCount < targetCount) {
+      // 需要添加轨道球
+      for (let i = currentCount; i < targetCount; i++) {
+        this.addOrbital();
+      }
+    } else if (currentCount > targetCount) {
+      // 需要移除轨道球
+      for (let i = currentCount; i > targetCount; i--) {
+        const orbital = this.orbitals.pop();
+        if (orbital) {
+          orbital.destroy();
+        }
+      }
+    }
+  }
+
   updateOrbitals() {
     if (this.orbitals.length === 0) return;
 
@@ -1782,12 +2111,17 @@ export class GameScene extends Phaser.Scene {
       const isBoss = (enemy as any).enemyConfig?.isBoss || false;
 
       // Boss掉落宝箱和更多金币，普通敌人掉落经验球和金币
-      if (isBoss) {
-        this.spawnTreasureChest(enemy.x, enemy.y);
+      if (isBoss && !(enemy as any).dropped) {
+        // 标记已掉落，防止重复掉落
+        (enemy as any).dropped = true;
+        const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+        const quality = rollEquipmentQuality();
+        const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+        this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
-      } else {
+      } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
         // 30%概率掉落金币
@@ -2177,9 +2511,9 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // 如果是轨道类技能，需要创建新的轨道球
+    // 如果是轨道类技能，需要同步轨道球数量
     if (skill.effects?.orbitalCount && skill.effects.orbitalCount > 0) {
-      this.addOrbital();
+      this.syncOrbitalCount();
     }
 
     // 显示升级提示
