@@ -126,12 +126,12 @@ export class MenuScene extends Phaser.Scene {
     this.load.audio('victoryBgm', 'assets/audio/epic-rise-334778.mp3');
   }
   
-  create() {
+  async create() {
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
     
     // 加载当前难度
-    this.currentDifficulty = SaveManager.getDifficulty();
+    this.currentDifficulty = await SaveManager.getDifficulty();
     
     // 播放背景音乐
     if (!this.sound.get('bgm')) {
@@ -182,8 +182,8 @@ export class MenuScene extends Phaser.Scene {
     this.subtitleText.setOrigin(0.5);
     
     // 显示存档信息
-    const hasSave = SaveManager.hasSave();
-    const totalCoins = SaveManager.getTotalCoins();
+    const hasSave = await SaveManager.hasSave();
+    const totalCoins = await SaveManager.getTotalCoins();
     
     // 创建难度选择UI（在显示存档信息之后）
     this.createDifficultyDropdown();
@@ -397,8 +397,8 @@ export class MenuScene extends Phaser.Scene {
       yesButton.setScale(1);
     });
     
-    yesButton.on('pointerdown', () => {
-      SaveManager.deleteSave();
+    yesButton.on('pointerdown', async () => {
+      await SaveManager.deleteSave();
       overlay.destroy();
       dialogBg.destroy();
       confirmText.destroy();
@@ -439,7 +439,7 @@ export class MenuScene extends Phaser.Scene {
     });
   }
   
-  createDifficultyDropdown() {
+  async createDifficultyDropdown() {
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
     
@@ -475,7 +475,7 @@ export class MenuScene extends Phaser.Scene {
     // 初始位置和大小将由updateDifficultyPosition设置
     
     // 获取已解锁的难度
-    const unlockedDifficulties = SaveManager.getUnlockedDifficulties();
+    const unlockedDifficulties = await SaveManager.getUnlockedDifficulties();
     const allDifficulties = getAllDifficulties();
     console.log(unlockedDifficulties)
     // 添加选项
@@ -558,9 +558,9 @@ export class MenuScene extends Phaser.Scene {
     this.difficultySelect.style.fontSize = (14 * scale) + 'px';
   }
   
-  selectDifficulty(level: DifficultyLevel) {
+  async selectDifficulty(level: DifficultyLevel) {
     this.currentDifficulty = level;
-    SaveManager.setDifficulty(level);
+    await SaveManager.setDifficulty(level);
     
     // 更新描述文字
     const currentConfig = getDifficultyConfig(level);
@@ -638,6 +638,16 @@ export class MenuScene extends Phaser.Scene {
         key: 'slime-blue-idle',
         frames: this.anims.generateFrameNumbers('slime-blue', { start: 0, end: 12 }),
         frameRate: 10,
+        repeat: -1
+      });
+    }
+    
+    // 创建宝箱动画（8x2 sprite sheet，使用第二行前4帧：帧8-11）
+    if (this.textures.exists('treasure-chest') && !this.anims.exists('treasure-idle')) {
+      this.anims.create({
+        key: 'treasure-idle',
+        frames: this.anims.generateFrameNumbers('treasure-chest', { start: 8, end: 11 }),
+        frameRate: 8,
         repeat: -1
       });
     }
@@ -820,7 +830,7 @@ export class MenuScene extends Phaser.Scene {
     this.cameras.main.fadeOut(500, 0, 0, 0);
     
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.start('GameScene');
+      this.scene.start('SafeHouseScene');
     });
     
     // 播放开始音效（如果有的话）

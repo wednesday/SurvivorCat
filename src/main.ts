@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { InventoryScene } from './scenes/InventoryScene';
+import { SafeHouseScene } from './scenes/SafeHouseScene';
 
 // Phaser 游戏配置
 const config: Phaser.Types.Core.GameConfig = {
@@ -17,7 +18,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [MenuScene, GameScene, InventoryScene],
+  scene: [MenuScene, SafeHouseScene, GameScene, InventoryScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH

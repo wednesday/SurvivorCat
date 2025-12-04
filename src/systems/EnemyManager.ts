@@ -181,112 +181,46 @@ export class EnemyManager {
   // 计算生成位置
   private calculateSpawnPosition(): { x: number; y: number } {
     const playerSprite = this.player as any;
-    const spawnDistance = 600; // 生成距离（屏幕外）
-    const minSpawnDistance = 500; // 最小生成距离
+    const camera = this.scene.cameras.main;
     
-    // 地图边界
-    const halfWidth = this.mapWidth / 2;
-    const halfHeight = this.mapHeight / 2;
-    const mapBounds = {
-      minX: -halfWidth + 100,
-      maxX: halfWidth - 100,
-      minY: -halfHeight + 100,
-      maxY: halfHeight - 100
-    };
+    // 获取相机视野范围
+    const viewWidth = camera.width;
+    const viewHeight = camera.height;
     
-    // 随机选择一个角度（360度）
-    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    // 在视野外的安全距离（屏幕外100-200像素）
+    const minOffscreenDistance = 100;
+    const maxOffscreenDistance = 200;
+    const offscreenBuffer = Phaser.Math.FloatBetween(minOffscreenDistance, maxOffscreenDistance);
     
-    // 在该角度方向上，从玩家位置向外扩展生成
-    let x = playerSprite.x + Math.cos(angle) * spawnDistance;
-    let y = playerSprite.y + Math.sin(angle) * spawnDistance;
+    // 计算相机边界（世界坐标）
+    const camLeft = camera.scrollX;
+    const camRight = camera.scrollX + viewWidth;
+    const camTop = camera.scrollY;
+    const camBottom = camera.scrollY + viewHeight;
     
-    // 如果超出地图边界，将位置拉回到地图边界
-    const needsClamp = x < mapBounds.minX || x > mapBounds.maxX || 
-                       y < mapBounds.minY || y > mapBounds.maxY;
+    // 随机选择在哪一侧刷新：0=上, 1=右, 2=下, 3=左
+    const side = Phaser.Math.Between(0, 3);
     
-    if (needsClamp) {
-      // 计算从玩家到目标点的射线与地图边界的交点
-      const dx = x - playerSprite.x;
-      const dy = y - playerSprite.y;
-      
-      // 计算射线与各边界的交点参数 t (0到1之间)
-      const tValues: number[] = [];
-      
-      // 左边界
-      if (dx !== 0) {
-        const t = (mapBounds.minX - playerSprite.x) / dx;
-        if (t > 0 && t <= 1) {
-          const intersectY = playerSprite.y + t * dy;
-          if (intersectY >= mapBounds.minY && intersectY <= mapBounds.maxY) {
-            tValues.push(t);
-          }
-        }
-      }
-      
-      // 右边界
-      if (dx !== 0) {
-        const t = (mapBounds.maxX - playerSprite.x) / dx;
-        if (t > 0 && t <= 1) {
-          const intersectY = playerSprite.y + t * dy;
-          if (intersectY >= mapBounds.minY && intersectY <= mapBounds.maxY) {
-            tValues.push(t);
-          }
-        }
-      }
-      
-      // 上边界
-      if (dy !== 0) {
-        const t = (mapBounds.minY - playerSprite.y) / dy;
-        if (t > 0 && t <= 1) {
-          const intersectX = playerSprite.x + t * dx;
-          if (intersectX >= mapBounds.minX && intersectX <= mapBounds.maxX) {
-            tValues.push(t);
-          }
-        }
-      }
-      
-      // 下边界
-      if (dy !== 0) {
-        const t = (mapBounds.maxY - playerSprite.y) / dy;
-        if (t > 0 && t <= 1) {
-          const intersectX = playerSprite.x + t * dx;
-          if (intersectX >= mapBounds.minX && intersectX <= mapBounds.maxX) {
-            tValues.push(t);
-          }
-        }
-      }
-      
-      // 如果找到交点，使用最近的交点
-      if (tValues.length > 0) {
-        const t = Math.min(...tValues);
-        x = playerSprite.x + t * dx;
-        y = playerSprite.y + t * dy;
-        
-        // 轻微向内偏移，确保在边界内
-        const offset = 10;
-        if (x <= mapBounds.minX + offset) x = mapBounds.minX + offset;
-        if (x >= mapBounds.maxX - offset) x = mapBounds.maxX - offset;
-        if (y <= mapBounds.minY + offset) y = mapBounds.minY + offset;
-        if (y >= mapBounds.maxY - offset) y = mapBounds.maxY - offset;
-      } else {
-        // 降级方案：简单clamp
-        x = Phaser.Math.Clamp(x, mapBounds.minX, mapBounds.maxX);
-        y = Phaser.Math.Clamp(y, mapBounds.minY, mapBounds.maxY);
-      }
-      
-      // 验证最终距离，确保不会太近
-      const finalDistance = Phaser.Math.Distance.Between(x, y, playerSprite.x, playerSprite.y);
-      if (finalDistance < minSpawnDistance) {
-        // 如果太近，在当前方向上推到最小距离
-        const pushAngle = Math.atan2(y - playerSprite.y, x - playerSprite.x);
-        x = playerSprite.x + Math.cos(pushAngle) * minSpawnDistance;
-        y = playerSprite.y + Math.sin(pushAngle) * minSpawnDistance;
-        
-        // 最后确保在边界内
-        x = Phaser.Math.Clamp(x, mapBounds.minX, mapBounds.maxX);
-        y = Phaser.Math.Clamp(y, mapBounds.minY, mapBounds.maxY);
-      }
+    let x: number, y: number;
+    
+    switch (side) {
+      case 0: // 上方
+        x = Phaser.Math.FloatBetween(camLeft - offscreenBuffer, camRight + offscreenBuffer);
+        y = camTop - offscreenBuffer;
+        break;
+      case 1: // 右方
+        x = camRight + offscreenBuffer;
+        y = Phaser.Math.FloatBetween(camTop - offscreenBuffer, camBottom + offscreenBuffer);
+        break;
+      case 2: // 下方
+        x = Phaser.Math.FloatBetween(camLeft - offscreenBuffer, camRight + offscreenBuffer);
+        y = camBottom + offscreenBuffer;
+        break;
+      case 3: // 左方
+      default:
+        x = camLeft - offscreenBuffer;
+        y = Phaser.Math.FloatBetween(camTop - offscreenBuffer, camBottom + offscreenBuffer);
+        break;
     }
     
     return { x, y };

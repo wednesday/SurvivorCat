@@ -103,14 +103,22 @@ export class GameScene extends Phaser.Scene {
     super({ key: "GameScene" });
   }
 
+  init(data?: any) {
+    // 接收安全屋数据
+    if (data && data.safeHouseData && data.safeHouseData.skillRefreshCount) {
+      // 基础重抽次数 2 + 购买的次数
+      this.rerollsRemaining = 2 + data.safeHouseData.skillRefreshCount;
+    }
+  }
+
   preload() {
     // 资源已在 MenuScene 中预加载，这里不需要重复加载
     // 如果需要额外的游戏场景专属资源，可以在这里加载
   }
 
-  create() {
+  async create() {
     // 加载游戏难度设置
-    this.gameDifficulty = SaveManager.getDifficulty();
+    this.gameDifficulty = await SaveManager.getDifficulty();
     
     // 初始化音乐
     this.initMusic();
@@ -170,11 +178,13 @@ export class GameScene extends Phaser.Scene {
     this.player.play("cat-idle-anim");
 
     this.physics.add.existing(this.player);
-    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
-    // 移除世界边界限制，允许无限移动
-    playerBody.setCollideWorldBounds(false);
-    playerBody.setSize(16, 20); // 缩小碰撞体积
-    playerBody.setOffset(8, 12); // 调整碰撞框位置，使其更贴合猫咪身体
+    const playerBody = this.player.body as Phaser.Physics.Arcade.Body | null;
+    if (playerBody) {
+      // 移除世界边界限制，允许无限移动
+      playerBody.setCollideWorldBounds(false);
+      playerBody.setSize(16, 20); // 缩小碰撞体积
+      playerBody.setOffset(8, 12); // 调整碰撞框位置，使其更贴合猫咪身体
+    }
 
     // 创建敌人组
     this.enemies = this.physics.add.group();
@@ -225,7 +235,10 @@ export class GameScene extends Phaser.Scene {
     this.gameTime = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
-    this.rerollsRemaining = 2;
+    // 保留安全屋购买的额外次数，只重置为基础值2
+    if (this.rerollsRemaining <= 2) {
+      this.rerollsRemaining = 2;
+    }
     this.difficultyLevel = 1;
     this.lastDifficultyIncreaseTime = 0;
 
@@ -1756,19 +1769,30 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnMagnetItem(x: number, y: number) {
-    // 创建金币磁力物（使用GIF）
-    const magnet = this.add.circle(x, y, 5, 0xffd700);
+    // 创建磁力物（使用青色星形图形，更醒目）
+    const magnet = this.add.star(x, y, 5, 8, 12, 0x00ffff);
     magnet.setScale(1.5);
+    magnet.setStrokeStyle(2, 0xffffff);
     this.physics.add.existing(magnet);
     this.magnetItems.add(magnet);
 
     // 脉冲效果
     this.tweens.add({
       targets: magnet,
-      scale: { from: 1.5, to: 2.0 },
+      scale: { from: 1.5, to: 2.2 },
+      alpha: { from: 1, to: 0.7 },
       duration: 500,
       yoyo: true,
       repeat: -1,
+    });
+    
+    // 旋转效果
+    this.tweens.add({
+      targets: magnet,
+      angle: 360,
+      duration: 2000,
+      repeat: -1,
+      ease: 'Linear'
     });
   }
 
@@ -1827,8 +1851,9 @@ export class GameScene extends Phaser.Scene {
   spawnTreasureChest(x: number, y: number, equipmentPayload?: { id: string; affixes: AffixInstance[]; quality?: Rarity }) {
     // 创建宝箱精灵
     const chest = this.add.sprite(x, y, 'treasure-chest');
-    chest.setScale(1.5);
+    chest.setScale(2.0); // 增大尺寸
     chest.play('treasure-idle');
+    chest.setDepth(100); // 提高层级确保显示在上层
     this.physics.add.existing(chest);
     this.treasureChests.add(chest);
 
@@ -1839,11 +1864,83 @@ export class GameScene extends Phaser.Scene {
       (chest as any).equipmentPayload = equipmentPayload;
     }
 
+    // 创建发光光晕效果
+    const glow = this.add.circle(x, y, 40, 0xffd700, 0.3);
+    glow.setDepth(99);
+    (chest as any).glow = glow;
+    
+    // 光晕脉动效果
+    this.tweens.add({
+      targets: glow,
+      scale: 1.3,
+      alpha: 0.5,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
 
-    // 跳动效果
+    // 创建外围光环
+    const outerGlow = this.add.circle(x, y, 60, 0xffaa00, 0.15);
+    outerGlow.setDepth(98);
+    (chest as any).outerGlow = outerGlow;
+    
+    this.tweens.add({
+      targets: outerGlow,
+      scale: 1.5,
+      alpha: 0.3,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // 创建闪烁粒子效果
+    const particleTimer = this.time.addEvent({
+      delay: 200,
+      callback: () => {
+        if (!chest.active) {
+          particleTimer.destroy();
+          return;
+        }
+        // 在宝箱周围生成金色闪光粒子
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 30 + Math.random() * 20;
+        const px = chest.x + Math.cos(angle) * distance;
+        const py = chest.y + Math.sin(angle) * distance;
+        
+        const particle = this.add.circle(px, py, 3, 0xffd700);
+        particle.setDepth(101);
+        
+        this.tweens.add({
+          targets: particle,
+          y: py - 30,
+          alpha: 0,
+          duration: 1000,
+          ease: "Power2",
+          onComplete: () => {
+            if (particle.active) particle.destroy();
+          },
+        });
+      },
+      loop: true,
+    });
+    (chest as any).particleTimer = particleTimer;
+
+    // 增强的跳动效果
     this.tweens.add({
       targets: chest,
-      y: y - 10,
+      y: y - 15,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+    
+    // 同步光晕位置
+    this.tweens.add({
+      targets: [glow, outerGlow],
+      y: y - 15,
       duration: 800,
       yoyo: true,
       repeat: -1,
@@ -1879,11 +1976,22 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  openTreasureChest(player: any, chest: any) {
+  async openTreasureChest(player: any, chest: any) {
     if (!chest.active || !(chest as any).isChest) return;
 
     // 保存是否有装备掉落到本次宝箱
     const payload = (chest as any).equipmentPayload as { id: string; affixes: AffixInstance[]; quality?: Rarity } | undefined;
+
+    // 清理附加的视觉效果
+    if ((chest as any).glow) {
+      (chest as any).glow.destroy();
+    }
+    if ((chest as any).outerGlow) {
+      (chest as any).outerGlow.destroy();
+    }
+    if ((chest as any).particleTimer) {
+      (chest as any).particleTimer.destroy();
+    }
 
     // 销毁宝箱
     chest.destroy();
@@ -1920,7 +2028,7 @@ export class GameScene extends Phaser.Scene {
       // 直接将装备放入背包
       let autoStored = false;
       try {
-        SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality });
+        await SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality });
         autoStored = true;
       } catch (e) {
         console.warn('[openTreasureChest] Failed to auto-store equipment', e);
@@ -2055,17 +2163,17 @@ export class GameScene extends Phaser.Scene {
         });
       });
 
-      btnDiscard.on('pointerdown', () => {
+      btnDiscard.on('pointerdown', async () => {
         // 丢弃装备（从背包移除）
         if (autoStored) {
           try {
-            const inv = SaveManager.getInventory();
+            const inv = await SaveManager.getInventory();
             const idx = inv.findIndex(it => it.id === payload.id && JSON.stringify(it.affixes) === JSON.stringify(payload.affixes));
             if (idx >= 0) {
               inv.splice(idx, 1);
-              const save = SaveManager.loadSave();
+              const save = await SaveManager.loadSave();
               (save as any).inventory = inv;
-              SaveManager.saveSave(save as any);
+              await SaveManager.saveSave(save as any);
             }
           } catch (e) {
             console.warn('[openTreasureChest] Failed to remove equipment', e);
@@ -2836,6 +2944,13 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
+    // 如果增加了最大生命值，更新状态面板显示
+    if (skill.effects?.maxHP) {
+      this.hpText.setText(
+        `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`
+      );
+    }
+
     // 如果是轨道类技能，需要同步轨道球数量
     if (skill.effects?.orbitalCount && skill.effects.orbitalCount > 0) {
       this.syncOrbitalCount();
@@ -2935,7 +3050,7 @@ export class GameScene extends Phaser.Scene {
     console.log('场景清理完成');
   }
 
-  gameVictory() {
+  async gameVictory() {
     this.isPaused = true;
     
     // 切换到胜利音乐
@@ -2958,35 +3073,38 @@ export class GameScene extends Phaser.Scene {
     });
 
     // 收集所有宝箱（只包含装备）
-    this.treasureChests.getChildren().forEach((chest: any) => {
+    for (const chest of this.treasureChests.getChildren()) {
       if (chest && chest.active && (chest as any).isChest) {
         const payload = (chest as any).equipmentPayload;
         if (payload && payload.id) {
           collectedChests.push(payload);
           // 将装备自动放入背包
           try {
-            SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality: payload.quality });
+            await SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality: payload.quality });
           } catch (e) {
             console.warn('[gameVictory] Failed to add equipment to inventory', e);
           }
         }
         chest.destroy();
       }
-    });
+    }
 
     // 不要暂停场景，保持输入处理活跃
     // this.scene.pause();
 
     // 通关后解锁下一难度
-    SaveManager.completeDifficulty(this.gameDifficulty);
+    await SaveManager.completeDifficulty(this.gameDifficulty);
 
     // 保存游戏数据到存档
-    SaveManager.addCoins(this.coinsCollected);
-    SaveManager.updateStatistics(
+    await SaveManager.addCoins(this.coinsCollected);
+    await SaveManager.updateStatistics(
       Math.floor(this.gameTime),
       this.killCount,
       this.difficultyLevel
     );
+    
+    // 清空安全屋商店，下次进入时刷新
+    await SaveManager.clearSafeHouseShop();
 
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
@@ -3104,7 +3222,7 @@ export class GameScene extends Phaser.Scene {
     statsText.setDepth(5002);
 
     // 显示总金币数
-    const totalCoins = SaveManager.getTotalCoins();
+    const totalCoins = await SaveManager.getTotalCoins();
     const totalCoinsText = this.add.text(
       centerX - 300,
       centerY + 130,
@@ -3153,7 +3271,7 @@ export class GameScene extends Phaser.Scene {
     // 将已解锁的下一个难度设置为当前选中难度（保存并同步 UI）
     try {
       if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
-        SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
+        await SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
         this.gameDifficulty = nextDifficulty as DifficultyLevel;
         // 更新难度显示颜色与文本
         try {
@@ -3256,7 +3374,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // 按钮点击事件 -> 切换到下一个难度并重启场景
-    const onNextDifficultyClicked = (pointer?: any, localX?: any, localY?: any, event?: any) => {
+    const onNextDifficultyClicked = async (pointer?: any, localX?: any, localY?: any, event?: any) => {
       console.log('胜利界面-下一难度按钮被点击');
 
       // 停止胜利音乐
@@ -3286,7 +3404,7 @@ export class GameScene extends Phaser.Scene {
       const nextDifficulty = this.gameDifficulty + 1;
       if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
         try {
-          SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
+          await SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
         } catch (e) {
           console.warn('[gameVictory] Failed to set next difficulty', e);
         }
@@ -3455,7 +3573,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  gameOver() {
+  async gameOver() {
     this.isPaused = true;
     // 不暂停场景，保持输入处理活跃
     // this.scene.pause();
@@ -3466,16 +3584,19 @@ export class GameScene extends Phaser.Scene {
     // 检查是否达到解锁下一难度的条件（例如：生存到一定波数）
     const unlockThreshold = 10; // 需要生存到第10波才能解锁下一难度
     if (this.difficultyLevel >= unlockThreshold) {
-      SaveManager.completeDifficulty(this.gameDifficulty);
+      await SaveManager.completeDifficulty(this.gameDifficulty);
     }
 
     // 保存游戏数据到存档
-    SaveManager.addCoins(this.coinsCollected);
-    SaveManager.updateStatistics(
+    await SaveManager.addCoins(this.coinsCollected);
+    await SaveManager.updateStatistics(
       Math.floor(this.gameTime),
       this.killCount,
       this.difficultyLevel
     );
+    
+    // 清空安全屋商店，下次进入时刷新
+    await SaveManager.clearSafeHouseShop();
 
     const bg = this.add.rectangle(
       this.cameras.main.centerX,
@@ -3525,7 +3646,7 @@ export class GameScene extends Phaser.Scene {
     statsText.setDepth(5001);
 
     // 显示总金币数
-    const totalCoins = SaveManager.getTotalCoins();
+    const totalCoins = await SaveManager.getTotalCoins();
     const totalCoinsText = this.add.text(
       this.cameras.main.centerX,
       this.cameras.main.centerY + 40,
@@ -3684,6 +3805,9 @@ export class GameScene extends Phaser.Scene {
     if (this.mapManager && this.player) {
       this.mapManager.update(this.player.x, this.player.y);
     }
+
+    // 检查玩家是否存在
+    if (!this.player || !this.player.body) return;
 
     const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
 

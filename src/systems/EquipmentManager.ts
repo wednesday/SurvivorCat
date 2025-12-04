@@ -14,7 +14,18 @@ export class EquipmentManager {
   private onEquipmentChangeCallback?: () => void;
 
   constructor(private skillManager: SkillManager) {
-    const save = SaveManager.loadSave();
+    // 初始化需要异步加载
+    this.slots = {
+      ring1: { id: null, affixes: [] },
+      ring2: { id: null, affixes: [] },
+      necklace: { id: null, affixes: [] },
+      cloth: { id: null, affixes: [] }
+    };
+    this.init();
+  }
+
+  private async init() {
+    const save = await SaveManager.loadSave();
     this.slots = { ...save.equipment };
     // 应用装备效果到 skillManager
     this.applyAll();
@@ -31,26 +42,26 @@ export class EquipmentManager {
   }
 
   // 装备物品到指定槽位（ring1/ring2/necklace/cloth）
-  equip(slot: keyof EquipmentManager['slots'], itemId: string | null, affixes: AffixInstance[] = [], quality?: Rarity): void {
+  async equip(slot: keyof EquipmentManager['slots'], itemId: string | null, affixes: AffixInstance[] = [], quality?: Rarity): Promise<void> {
     const current = this.slots[slot];
     const newVal = { id: itemId, affixes, quality };
     // 如果相同则跳过
     if (current && current.id === newVal.id && JSON.stringify(current.affixes) === JSON.stringify(newVal.affixes) && current.quality === newVal.quality) return;
     this.slots[slot] = newVal;
-    this.persist();
+    await this.persist();
     this.applyAll();
   }
 
   // 卸下指定槽位
-  unequip(slot: keyof EquipmentManager['slots']): void {
-    this.equip(slot, null);
+  async unequip(slot: keyof EquipmentManager['slots']): Promise<void> {
+    await this.equip(slot, null);
   }
 
   // 将当前装备写入存档
-  private persist(): void {
-    const save = SaveManager.loadSave();
+  private async persist(): Promise<void> {
+    const save = await SaveManager.loadSave();
     save.equipment = { ...this.slots };
-    SaveManager.saveSave(save);
+    await SaveManager.saveSave(save);
   }
 
   // 清除并重新应用所有装备效果（先重置 skillManager 基础值）

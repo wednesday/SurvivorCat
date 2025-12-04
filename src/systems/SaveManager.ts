@@ -28,10 +28,150 @@ export interface PlayerSaveData {
   };
   // 背包：存放已获得但未装备的装备实例
   inventory?: { id: string; affixes: AffixInstance[]; quality?: Rarity }[];
+  // 安全屋商店装备（每次游戏结束刷新）
+  safeHouseShop?: { id: string; affixes: AffixInstance[]; quality: Rarity; price: number }[];
 }
 
 export class SaveManager {
-  private static readonly SAVE_KEY = 'survivor_cat_save';
+  private static readonly SAVE_FILE = 'survivor_cat_save.json';
+  private static currentSave: PlayerSaveData | null = null; // 内存中的存档实例
+  private static isTauriAvailable: boolean | null = null;
+  
+  // 检查是否运行在 Tauri 环境
+  private static async checkTauriAvailable(): Promise<boolean> {
+    if (this.isTauriAvailable !== null) {
+      return this.isTauriAvailable;
+    }
+    
+    try {
+      // 检查 window.__TAURI__ 是否存在
+      this.isTauriAvailable = typeof window !== 'undefined' && '__TAURI__' in window;
+      console.log('[SaveManager] Tauri environment detected:', this.isTauriAvailable);
+      return this.isTauriAvailable;
+    } catch {
+      this.isTauriAvailable = false;
+      console.log('[SaveManager] Not in Tauri environment, using localStorage');
+      return false;
+    }
+  }
+  
+  // 使用文件系统保存（Tauri）
+  private static async saveToFile(data: PlayerSaveData): Promise<boolean> {
+    try {
+      console.log('[SaveManager] Attempting to save to file...');
+      const { writeTextFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+      const jsonString = JSON.stringify(data, null, 2);
+      await writeTextFile(this.SAVE_FILE, jsonString, { 
+        baseDir: BaseDirectory.AppData 
+      });
+      console.log('[SaveManager] Successfully saved to file:', this.SAVE_FILE);
+      return true;
+    } catch (error) {
+      console.error('[SaveManager] Failed to save to file:', error);
+      return false;
+    }
+  }
+  
+  // 从文件系统加载（Tauri）
+  private static async loadFromFile(): Promise<PlayerSaveData | null> {
+    try {
+      const { readTextFile, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+      
+      const fileExists = await exists(this.SAVE_FILE, { 
+        baseDir: BaseDirectory.AppData 
+      });
+      
+      if (!fileExists) {
+        return null;
+      }
+      
+      const content = await readTextFile(this.SAVE_FILE, { 
+        baseDir: BaseDirectory.AppData 
+      });
+      return JSON.parse(content);
+    } catch (error) {
+      console.error('从文件加载失败:', error);
+      return null;
+    }
+  }
+  
+  // 使用 localStorage 保存（浏览器回退方案）
+  private static saveToLocalStorage(data: PlayerSaveData): boolean {
+    try {
+      localStorage.setItem('survivor_cat_save', JSON.stringify(data));
+      return true;
+    } catch (error) {
+      console.error('保存到 localStorage 失败:', error);
+      return false;
+    }
+  }
+  
+  // 从 localStorage 加载（浏览器回退方案）
+  private static loadFromLocalStorage(): PlayerSaveData | null {
+    try {
+      const saveData = localStorage.getItem('survivor_cat_save');
+      if (saveData) {
+        return JSON.parse(saveData);
+      }
+    } catch (error) {
+      console.error('从 localStorage 加载失败:', error);
+    }
+    return null;
+  }
+  
+  // 检查文件是否存在（Tauri）
+  private static async fileExists(): Promise<boolean> {
+    try {
+      const { exists, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+      return await exists(this.SAVE_FILE, { 
+        baseDir: BaseDirectory.AppData 
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  // 获取存档文件的完整路径
+  static async getSaveFilePath(): Promise<string> {
+    const useTauri = await this.checkTauriAvailable();
+    
+    if (useTauri) {
+      try {
+        const { appDataDir } = await import('@tauri-apps/api/path');
+        const appDataPath = await appDataDir();
+        return `文件: ${appDataPath}${this.SAVE_FILE}`;
+      } catch (error) {
+        console.error('获取文件路径失败:', error);
+        return '文件: Tauri AppData 目录 (无法获取具体路径)';
+      }
+    } else {
+      // LocalStorage 位置
+      const identifier = 'com.phaser.game';
+      const username = window.location.hostname === 'localhost' ? 'YourUser' : 'User';
+      return `LocalStorage (浏览器存储)\n存储位置: ${window.location.origin}\n\n实际文件位于:\nC:\\Users\\${username}\\AppData\\Local\\${identifier}\\EBWebView\\Default\\Local Storage\\leveldb\\`;
+    }
+  }
+  
+  // 获取存档信息（用于调试）
+  static async getSaveInfo(): Promise<{ location: string; exists: boolean; size: number }> {
+    const useTauri = await this.checkTauriAvailable();
+    
+    if (useTauri) {
+      const exists = await this.fileExists();
+      return {
+        location: 'Tauri File System',
+        exists,
+        size: 0
+      };
+    } else {
+      const data = localStorage.getItem('survivor_cat_save');
+      return {
+        location: 'LocalStorage',
+        exists: !!data,
+        size: data ? new Blob([data]).size : 0
+      };
+    }
+  }
   
   // 获取默认存档数据
   static getDefaultSave(): PlayerSaveData {
@@ -57,20 +197,34 @@ export class SaveManager {
         ring2: { id: null, affixes: [] },
         necklace: { id: null, affixes: [] },
         cloth: { id: null, affixes: [] }
-      }
-      ,
-      inventory: []
+      },
+      inventory: [],
+      safeHouseShop: []
     };
   }
   
-  // 加载存档
-  static loadSave(): PlayerSaveData {
+  // 加载存档（如果已有内存缓存则返回缓存）
+  static async loadSave(): Promise<PlayerSaveData> {
+    // 如果已有缓存，直接返回
+    if (this.currentSave !== null) {
+      return this.currentSave;
+    }
+    
+    const useTauri = await this.checkTauriAvailable();
+    
+    // 尝试从对应的存储加载
     try {
-      const saveData = localStorage.getItem(this.SAVE_KEY);
-      if (saveData) {
-        const parsed = JSON.parse(saveData);
+      let parsed: PlayerSaveData | null = null;
+      
+      if (useTauri) {
+        parsed = await this.loadFromFile();
+      } else {
+        parsed = this.loadFromLocalStorage();
+      }
+      
+      if (parsed) {
         // 确保所有字段都存在（兼容旧版本存档）
-        return {
+        this.currentSave = {
           ...this.getDefaultSave(),
           ...parsed,
           permanentUpgrades: {
@@ -87,98 +241,124 @@ export class SaveManager {
           },
           inventory: (parsed.inventory || this.getDefaultSave().inventory || []),
           unlockedDifficulties: (parsed.unlockedDifficulties || this.getDefaultSave().unlockedDifficulties || [DifficultyLevel.EASY, DifficultyLevel.NORMAL]),
-          highestCompletedDifficulty: (parsed.highestCompletedDifficulty !== undefined ? parsed.highestCompletedDifficulty : this.getDefaultSave().highestCompletedDifficulty)
+          highestCompletedDifficulty: (parsed.highestCompletedDifficulty !== undefined ? parsed.highestCompletedDifficulty : this.getDefaultSave().highestCompletedDifficulty),
+          safeHouseShop: (parsed.safeHouseShop || [])
         };
+        return this.currentSave!;
       }
     } catch (error) {
       console.error('加载存档失败:', error);
     }
-    return this.getDefaultSave();
+    
+    // 创建新存档
+    this.currentSave = this.getDefaultSave();
+    return this.currentSave;
   }
   
-  // 保存存档
-  static saveSave(saveData: PlayerSaveData): boolean {
+  // 保存存档（保存内存中的存档到文件或 localStorage）
+  static async saveSave(saveData?: PlayerSaveData): Promise<boolean> {
     try {
-      // 加载当前存档，合并关键字段以防止被覆盖
-      const currentSave = this.loadSave();
-      
-      // 合并解锁难度列表（取并集）
-      if (currentSave.unlockedDifficulties && saveData.unlockedDifficulties) {
-        const mergedDifficulties = new Set([
-          ...currentSave.unlockedDifficulties,
-          ...saveData.unlockedDifficulties
-        ]);
-        saveData.unlockedDifficulties = Array.from(mergedDifficulties);
+      // 如果提供了 saveData，更新内存缓存
+      if (saveData) {
+        this.currentSave = saveData;
       }
       
-      // 保留更高的完成难度
-      if (currentSave.highestCompletedDifficulty !== undefined && 
-          saveData.highestCompletedDifficulty !== undefined) {
-        saveData.highestCompletedDifficulty = Math.max(
-          currentSave.highestCompletedDifficulty,
-          saveData.highestCompletedDifficulty
-        );
-      } else if (currentSave.highestCompletedDifficulty !== undefined) {
-        saveData.highestCompletedDifficulty = currentSave.highestCompletedDifficulty;
+      // 如果没有内存缓存，先加载
+      if (!this.currentSave) {
+        this.currentSave = await this.loadSave();
       }
       
-      saveData.lastPlayed = new Date().toISOString();
-      localStorage.setItem(this.SAVE_KEY, JSON.stringify(saveData));
-      return true;
+      // 更新时间戳
+      this.currentSave.lastPlayed = new Date().toISOString();
+      
+      const useTauri = await this.checkTauriAvailable();
+      
+      // 保存到对应的存储
+      if (useTauri) {
+        return await this.saveToFile(this.currentSave);
+      } else {
+        return this.saveToLocalStorage(this.currentSave);
+      }
     } catch (error) {
       console.error('保存存档失败:', error);
       return false;
     }
   }
+  
+  // 强制重新加载存档（清除内存缓存）
+  static async reloadSave(): Promise<PlayerSaveData> {
+    this.currentSave = null;
+    return await this.loadSave();
+  }
 
   // 添加装备到背包
-  static addToInventory(item: { id: string; affixes: AffixInstance[]; quality?: Rarity }): void {
-    const save = this.loadSave();
+  static async addToInventory(item: { id: string; affixes: AffixInstance[]; quality?: Rarity }): Promise<void> {
+    const save = await this.loadSave();
     if (!save.inventory) save.inventory = [];
     save.inventory.push(item);
-    this.saveSave(save);
+    await this.saveSave(); // 不需要传参，直接保存内存中的存档
   }
 
   // 从背包移除指定索引的物品（返回是否成功）
-  static removeFromInventoryAt(index: number): boolean {
-    const save = this.loadSave();
+  static async removeFromInventoryAt(index: number): Promise<boolean> {
+    const save = await this.loadSave();
     if (!save.inventory || index < 0 || index >= save.inventory.length) return false;
     save.inventory.splice(index, 1);
-    this.saveSave(save);
+    await this.saveSave();
     return true;
   }
 
   // 获取背包列表（引用快照）
-  static getInventory(): { id: string; affixes: AffixInstance[]; quality?: Rarity }[] {
-    const save = this.loadSave();
+  static async getInventory(): Promise<{ id: string; affixes: AffixInstance[]; quality?: Rarity }[]> {
+    const save = await this.loadSave();
     return save.inventory || [];
   }
   
+  // 保存安全屋商店装备
+  static async saveSafeHouseShop(shop: { id: string; affixes: AffixInstance[]; quality: Rarity; price: number }[]): Promise<void> {
+    const save = await this.loadSave();
+    save.safeHouseShop = shop;
+    await this.saveSave();
+  }
+  
+  // 获取安全屋商店装备
+  static async getSafeHouseShop(): Promise<{ id: string; affixes: AffixInstance[]; quality: Rarity; price: number }[]> {
+    const save = await this.loadSave();
+    return save.safeHouseShop || [];
+  }
+  
+  // 清空安全屋商店（游戏结束时调用）
+  static async clearSafeHouseShop(): Promise<void> {
+    const save = await this.loadSave();
+    save.safeHouseShop = [];
+    await this.saveSave();
+  }
+  
   // 增加金币
-  static addCoins(amount: number): void {
-    const save = this.loadSave();
+  static async addCoins(amount: number): Promise<void> {
+    const save = await this.loadSave();
     save.totalCoins += amount;
-    this.saveSave(save);
+    await this.saveSave();
   }
   
   // 扣除金币（用于购买升级）
-  static spendCoins(amount: number): boolean {
-    const save = this.loadSave();
+  static async spendCoins(amount: number): Promise<boolean> {
+    const save = await this.loadSave();
     if (save.totalCoins >= amount) {
       save.totalCoins -= amount;
-      this.saveSave(save);
+      await this.saveSave();
       return true;
     }
     return false;
   }
   
   // 更新统计数据
-  static updateStatistics(
+  static async updateStatistics(
     playTime: number,
     kills: number,
     waveReached: number
-  ): void {
-    const save = this.loadSave();
+  ): Promise<void> {
+    const save = await this.loadSave();
     save.statistics.totalPlayTime += playTime;
     save.statistics.totalKills += kills;
     save.statistics.maxWaveReached = Math.max(
@@ -186,57 +366,77 @@ export class SaveManager {
       waveReached
     );
     save.statistics.gamesPlayed += 1;
-    this.saveSave(save);
+    await this.saveSave();
   }
   
   // 检查是否有存档
-  static hasSave(): boolean {
-    return localStorage.getItem(this.SAVE_KEY) !== null;
+  static async hasSave(): Promise<boolean> {
+    const useTauri = await this.checkTauriAvailable();
+    
+    if (useTauri) {
+      return await this.fileExists();
+    } else {
+      return localStorage.getItem('survivor_cat_save') !== null;
+    }
   }
   
   // 删除存档（重置游戏）
-  static deleteSave(): void {
-    localStorage.removeItem(this.SAVE_KEY);
+  static async deleteSave(): Promise<void> {
+    const useTauri = await this.checkTauriAvailable();
+    
+    if (useTauri) {
+      try {
+        const { remove, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+        await remove(this.SAVE_FILE, { baseDir: BaseDirectory.AppData });
+      } catch (error) {
+        console.error('删除存档文件失败:', error);
+      }
+    } else {
+      localStorage.removeItem('survivor_cat_save');
+    }
+    this.currentSave = null; // 清除内存缓存
   }
   
   // 获取总金币数
-  static getTotalCoins(): number {
-    return this.loadSave().totalCoins;
+  static async getTotalCoins(): Promise<number> {
+    const save = await this.loadSave();
+    return save.totalCoins;
   }
   
   // 设置难度等级
-  static setDifficulty(difficulty: DifficultyLevel): void {
-    const save = this.loadSave();
+  static async setDifficulty(difficulty: DifficultyLevel): Promise<void> {
+    const save = await this.loadSave();
     save.selectedDifficulty = difficulty;
-    this.saveSave(save);
+    await this.saveSave();
   }
   
   // 获取当前难度等级
-  static getDifficulty(): DifficultyLevel {
-    return this.loadSave().selectedDifficulty;
+  static async getDifficulty(): Promise<DifficultyLevel> {
+    const save = await this.loadSave();
+    return save.selectedDifficulty;
   }
   
   // 获取已解锁的难度列表
-  static getUnlockedDifficulties(): DifficultyLevel[] {
-    const save = this.loadSave();
+  static async getUnlockedDifficulties(): Promise<DifficultyLevel[]> {
+    const save = await this.loadSave();
     return save.unlockedDifficulties || [DifficultyLevel.EASY, DifficultyLevel.NORMAL];
   }
   
   // 解锁新难度
-  static unlockDifficulty(difficulty: DifficultyLevel): void {
-    const save = this.loadSave();
+  static async unlockDifficulty(difficulty: DifficultyLevel): Promise<void> {
+    const save = await this.loadSave();
     if (!save.unlockedDifficulties) {
       save.unlockedDifficulties = [DifficultyLevel.EASY, DifficultyLevel.NORMAL];
     }
     if (!save.unlockedDifficulties.includes(difficulty)) {
       save.unlockedDifficulties.push(difficulty);
-      this.saveSave(save);
+      await this.saveSave();
     }
   }
   
   // 完成难度（解锁下一个难度）
-  static completeDifficulty(difficulty: DifficultyLevel): void {
-    const save = this.loadSave();
+  static async completeDifficulty(difficulty: DifficultyLevel): Promise<void> {
+    const save = await this.loadSave();
     
     // 更新最高完成难度
     if (!save.highestCompletedDifficulty || difficulty > save.highestCompletedDifficulty) {
@@ -245,15 +445,20 @@ export class SaveManager {
     // 解锁下一个难度
     const nextDifficulty = difficulty + 1;
     if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
-      this.unlockDifficulty(nextDifficulty as DifficultyLevel);
+      if (!save.unlockedDifficulties) {
+        save.unlockedDifficulties = [DifficultyLevel.EASY, DifficultyLevel.NORMAL];
+      }
+      if (!save.unlockedDifficulties.includes(nextDifficulty as DifficultyLevel)) {
+        save.unlockedDifficulties.push(nextDifficulty as DifficultyLevel);
+      }
     }
     
-    this.saveSave(save);
+    await this.saveSave();
   }
   
   // 检查难度是否已解锁
-  static isDifficultyUnlocked(difficulty: DifficultyLevel): boolean {
-    const unlockedDifficulties = this.getUnlockedDifficulties();
+  static async isDifficultyUnlocked(difficulty: DifficultyLevel): Promise<boolean> {
+    const unlockedDifficulties = await this.getUnlockedDifficulties();
     return unlockedDifficulties.includes(difficulty);
   }
 }
