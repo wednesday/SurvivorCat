@@ -6,6 +6,7 @@ import {
   calculateSpawnRate,
   getAvailableBoss
 } from '../config/EnemyConfig';
+import { DifficultyLevel, getDifficultyConfig } from '../config/DifficultyConfig';
 
 // 怪物实例接口
 export interface Enemy extends Phaser.GameObjects.Sprite {
@@ -26,6 +27,7 @@ export class EnemyManager {
   
   private spawnTimer: number = 0;
   private currentDifficulty: number = 1;
+  private gameDifficulty: DifficultyLevel = DifficultyLevel.NORMAL; // 游戏难度设置
   private bossSpawned: Set<number> = new Set(); // 记录已生成过Boss的难度等级
   
   // 地图边界
@@ -37,13 +39,20 @@ export class EnemyManager {
     enemyGroup: Phaser.Physics.Arcade.Group,
     player: Phaser.GameObjects.GameObject,
     mapWidth: number = 3000,
-    mapHeight: number = 3000
+    mapHeight: number = 3000,
+    gameDifficulty: DifficultyLevel = DifficultyLevel.NORMAL
   ) {
     this.scene = scene;
     this.enemyGroup = enemyGroup;
     this.player = player;
     this.mapWidth = mapWidth;
     this.mapHeight = mapHeight;
+    this.gameDifficulty = gameDifficulty;
+  }
+  
+  // 设置游戏难度
+  setGameDifficulty(difficulty: DifficultyLevel): void {
+    this.gameDifficulty = difficulty;
   }
   
   // 更新难度等级
@@ -141,8 +150,10 @@ export class EnemyManager {
     this.spawnTimer += delta;
     
     const spawnRate = calculateSpawnRate(this.currentDifficulty);
+    const diffConfig = getDifficultyConfig(this.gameDifficulty);
+    const finalSpawnRate = spawnRate / diffConfig.enemySpawnRateMultiplier;
     
-    if (this.spawnTimer >= spawnRate) {
+    if (this.spawnTimer >= finalSpawnRate) {
       this.spawnEnemy();
       this.spawnTimer = 0;
     }
@@ -203,8 +214,20 @@ export class EnemyManager {
   
   // 创建怪物实体
   createEnemy(config: EnemyConfig, x: number, y: number): Enemy {
-    // 计算属性
+    // 计算属性（应用难度倍率）
     const stats = calculateEnemyStats(config, this.currentDifficulty);
+    const diffConfig = getDifficultyConfig(this.gameDifficulty);
+    
+    // 应用难度倍率
+    const finalHP = config.isBoss 
+      ? Math.floor(stats.hp * diffConfig.bossHealthMultiplier)
+      : Math.floor(stats.hp * diffConfig.enemyHealthMultiplier);
+    
+    const finalDamage = config.isBoss
+      ? Math.floor(stats.damage * diffConfig.bossDamageMultiplier)
+      : Math.floor(stats.damage * diffConfig.enemyDamageMultiplier);
+    
+    const finalSpeed = stats.speed * diffConfig.enemySpeedMultiplier;
     
     // 创建精灵
     let enemy: Phaser.GameObjects.Sprite;
@@ -239,10 +262,10 @@ export class EnemyManager {
     // 扩展属性
     const enemyExtended = enemy as Enemy;
     enemyExtended.enemyConfig = config;
-    enemyExtended.hp = stats.hp;
-    enemyExtended.maxHP = stats.hp;
-    enemyExtended.damage = stats.damage;
-    enemyExtended.speed = stats.speed;
+    enemyExtended.hp = finalHP;
+    enemyExtended.maxHP = finalHP;
+    enemyExtended.damage = finalDamage;
+    enemyExtended.speed = finalSpeed;
     enemyExtended.expValue = config.expValue;
     
     // 标记Boss和类型

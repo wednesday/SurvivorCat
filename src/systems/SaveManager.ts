@@ -1,5 +1,6 @@
 // 存档管理系统 - 管理游戏存档和读取
 import { AffixInstance, Rarity } from '../config/AffixConfig';
+import { DifficultyLevel } from '../config/DifficultyConfig';
 
 export interface PlayerSaveData {
   totalCoins: number;           // 总金币数
@@ -15,6 +16,9 @@ export interface PlayerSaveData {
     gamesPlayed: number;        // 游戏次数
   };
   lastPlayed: string;          // 最后游玩时间
+  selectedDifficulty: DifficultyLevel; // 选中的难度等级
+  unlockedDifficulties: DifficultyLevel[]; // 已解锁的难度等级
+  highestCompletedDifficulty: DifficultyLevel; // 最高完成的难度
   // 装备插槽（四个位置） - 每个槽位存储 { id, affixes, quality }
   equipment: {
     ring1: { id: string | null; affixes: AffixInstance[]; quality?: Rarity };
@@ -45,6 +49,9 @@ export class SaveManager {
         gamesPlayed: 0
       },
       lastPlayed: new Date().toISOString(),
+      selectedDifficulty: DifficultyLevel.NORMAL,
+      unlockedDifficulties: [DifficultyLevel.EASY, DifficultyLevel.NORMAL],
+      highestCompletedDifficulty: DifficultyLevel.EASY,
       equipment: {
         ring1: { id: null, affixes: [] },
         ring2: { id: null, affixes: [] },
@@ -78,7 +85,9 @@ export class SaveManager {
             ...this.getDefaultSave().equipment,
             ...(parsed.equipment || {})
           },
-          inventory: (parsed.inventory || this.getDefaultSave().inventory || [])
+          inventory: (parsed.inventory || this.getDefaultSave().inventory || []),
+          unlockedDifficulties: (parsed.unlockedDifficulties || this.getDefaultSave().unlockedDifficulties || [DifficultyLevel.EASY, DifficultyLevel.NORMAL]),
+          highestCompletedDifficulty: (parsed.highestCompletedDifficulty !== undefined ? parsed.highestCompletedDifficulty : this.getDefaultSave().highestCompletedDifficulty)
         };
       }
     } catch (error) {
@@ -170,5 +179,59 @@ export class SaveManager {
   // 获取总金币数
   static getTotalCoins(): number {
     return this.loadSave().totalCoins;
+  }
+  
+  // 设置难度等级
+  static setDifficulty(difficulty: DifficultyLevel): void {
+    const save = this.loadSave();
+    save.selectedDifficulty = difficulty;
+    this.saveSave(save);
+  }
+  
+  // 获取当前难度等级
+  static getDifficulty(): DifficultyLevel {
+    return this.loadSave().selectedDifficulty;
+  }
+  
+  // 获取已解锁的难度列表
+  static getUnlockedDifficulties(): DifficultyLevel[] {
+    const save = this.loadSave();
+    return save.unlockedDifficulties || [DifficultyLevel.EASY, DifficultyLevel.NORMAL];
+  }
+  
+  // 解锁新难度
+  static unlockDifficulty(difficulty: DifficultyLevel): void {
+    const save = this.loadSave();
+    if (!save.unlockedDifficulties) {
+      save.unlockedDifficulties = [DifficultyLevel.EASY, DifficultyLevel.NORMAL];
+    }
+    if (!save.unlockedDifficulties.includes(difficulty)) {
+      save.unlockedDifficulties.push(difficulty);
+      this.saveSave(save);
+    }
+  }
+  
+  // 完成难度（解锁下一个难度）
+  static completeDifficulty(difficulty: DifficultyLevel): void {
+    const save = this.loadSave();
+    
+    // 更新最高完成难度
+    if (!save.highestCompletedDifficulty || difficulty > save.highestCompletedDifficulty) {
+      save.highestCompletedDifficulty = difficulty;
+    }
+    
+    // 解锁下一个难度
+    const nextDifficulty = difficulty + 1;
+    if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
+      this.unlockDifficulty(nextDifficulty as DifficultyLevel);
+    }
+    
+    this.saveSave(save);
+  }
+  
+  // 检查难度是否已解锁
+  static isDifficultyUnlocked(difficulty: DifficultyLevel): boolean {
+    const unlockedDifficulties = this.getUnlockedDifficulties();
+    return unlockedDifficulties.includes(difficulty);
   }
 }

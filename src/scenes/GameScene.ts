@@ -9,6 +9,7 @@ import { EQUIPMENT_CONFIGS, getEquipmentById } from '../config/EquipmentConfig';
 import { rollAffixes, AffixInstance, rollEquipmentQuality, Rarity, getQualityColor, generateEquipmentName } from '../config/AffixConfig';
 import { SaveManager } from "../systems/SaveManager";
 import { CUSTOM_DECORATION_CONFIG } from "../config/MapDecorationConfig";
+import { DifficultyLevel, getDifficultyConfig, getDifficultyName, getDifficultyColor } from "../config/DifficultyConfig";
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite;
@@ -58,11 +59,15 @@ export class GameScene extends Phaser.Scene {
   private bonusLevelCount = 0; // 连续升级次数统计
   private bonusLevelChain = 0; // 当前连续升级链计数
   private coinsCollected = 0; // 本局收集的金币
+  private bossesDefeated = 0; // 击败的Boss数量
 
   // 难度提升相关
   private difficultyLevel = 1;
   private lastDifficultyIncreaseTime = 0;
   private difficultyIncreaseInterval = 60; // 1分钟 = 60秒
+  
+  // 游戏难度设置
+  private gameDifficulty: DifficultyLevel = DifficultyLevel.NORMAL;
 
   // 地图尺寸
   private mapWidth = 3000;
@@ -95,6 +100,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // 加载游戏难度设置
+    this.gameDifficulty = SaveManager.getDifficulty();
+    
     // 设置物理世界边界
     this.physics.world.setBounds(
       -this.mapWidth / 2,
@@ -192,10 +200,12 @@ export class GameScene extends Phaser.Scene {
         this.enemies,
         this.player,
         this.mapWidth,
-        this.mapHeight
+        this.mapHeight,
+        this.gameDifficulty
       );
     } else {
       this.enemyManager.reset();
+      this.enemyManager.setGameDifficulty(this.gameDifficulty);
     }
 
     // 设置初始难度
@@ -208,6 +218,7 @@ export class GameScene extends Phaser.Scene {
     this.expToNextLevel = 10;
     this.killCount = 0;
     this.coinsCollected = 0;
+    this.bossesDefeated = 0;
     this.gameTime = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
@@ -513,12 +524,19 @@ export class GameScene extends Phaser.Scene {
     });
     this.coinText.setScrollFactor(0);
 
-    // 添加难度等级显示
+    // 添加游戏难度显示（带颜色）
+    const difficultyName = getDifficultyName(this.gameDifficulty);
+    const difficultyColor = getDifficultyColor(this.gameDifficulty);
     this.diffText = this.add.text(
       10,
       160,
-      `难度: ${this.difficultyLevel}`,
-      style
+      `游戏难度: ${difficultyName} | 波数: ${this.difficultyLevel}`,
+      {
+        fontSize: "18px",
+        color: difficultyColor,
+        fontFamily: "Arial",
+        fontStyle: "bold"
+      }
     );
     this.diffText.setScrollFactor(0);
 
@@ -1068,6 +1086,8 @@ export class GameScene extends Phaser.Scene {
       if (isBoss && !(enemy as any).dropped) {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
+        this.bossesDefeated++;
+        
         // 为Boss生成一件随机装备并附带词条（保存到宝箱上）
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality();
@@ -1076,6 +1096,12 @@ export class GameScene extends Phaser.Scene {
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
+        
+        // 检查是否击败第4个Boss（通关）
+        if (this.bossesDefeated >= 4) {
+          this.gameVictory();
+          return;
+        }
       } else {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
@@ -1125,6 +1151,8 @@ export class GameScene extends Phaser.Scene {
       if (isBoss && !(enemy as any).dropped) {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
+        this.bossesDefeated++;
+        
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality();
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
@@ -1132,6 +1160,12 @@ export class GameScene extends Phaser.Scene {
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
+        
+        // 检查是否击败第4个Boss（通关）
+        if (this.bossesDefeated >= 4) {
+          this.gameVictory();
+          return;
+        }
       } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
@@ -1193,6 +1227,8 @@ export class GameScene extends Phaser.Scene {
       if (isBoss && !(enemy as any).dropped) {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
+        this.bossesDefeated++;
+        
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality();
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
@@ -1200,6 +1236,12 @@ export class GameScene extends Phaser.Scene {
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
+        
+        // 检查是否击败第4个Boss（通关）
+        if (this.bossesDefeated >= 4) {
+          this.gameVictory();
+          return;
+        }
       } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
@@ -1453,8 +1495,9 @@ export class GameScene extends Phaser.Scene {
 
   collectExp(player: any, orb: any) {
     orb.destroy();
+    const diffConfig = getDifficultyConfig(this.gameDifficulty);
     const expGained = Math.ceil(
-      orb.expValue * this.skillManager.stats.expGainMultiplier
+      orb.expValue * this.skillManager.stats.expGainMultiplier * diffConfig.expMultiplier
     );
     this.exp += expGained;
     this.expText.setText(`EXP: ${this.exp}/${this.expToNextLevel}`);
@@ -1484,11 +1527,13 @@ export class GameScene extends Phaser.Scene {
 
   collectCoin(player: any, coin: any) {
     const coinValue = (coin as any).coinValue || 1;
-    this.coinsCollected += coinValue;
+    const diffConfig = getDifficultyConfig(this.gameDifficulty);
+    const finalCoinValue = Math.ceil(coinValue * diffConfig.coinMultiplier);
+    this.coinsCollected += finalCoinValue;
     this.coinText.setText(`Coins: ${this.coinsCollected}`);
 
     // 收集音效提示（可选）
-    const text = this.add.text(coin.x, coin.y - 20, `+${coinValue}`, {
+    const text = this.add.text(coin.x, coin.y - 20, `+${finalCoinValue}`, {
       fontSize: "16px",
       color: "#ffd700",
       fontFamily: "Arial",
@@ -2543,8 +2588,373 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  gameVictory() {
+    // 收集场上所有金币和宝箱
+    const collectedCoins: { value: number }[] = [];
+    const collectedChests: any[] = [];
+
+    // 收集所有金币
+    this.coins.getChildren().forEach((coin: any) => {
+      if (coin && coin.active) {
+        const coinValue = (coin as any).coinValue || 1;
+        const diffConfig = getDifficultyConfig(this.gameDifficulty);
+        const finalCoinValue = Math.ceil(coinValue * diffConfig.coinMultiplier);
+        collectedCoins.push({ value: finalCoinValue });
+        this.coinsCollected += finalCoinValue;
+        coin.destroy();
+      }
+    });
+
+    // 收集所有宝箱（只包含装备）
+    this.treasureChests.getChildren().forEach((chest: any) => {
+      if (chest && chest.active && (chest as any).isChest) {
+        const payload = (chest as any).equipmentPayload;
+        if (payload && payload.id) {
+          collectedChests.push(payload);
+          // 将装备自动放入背包
+          try {
+            SaveManager.addToInventory({ id: payload.id, affixes: payload.affixes || [], quality: payload.quality });
+          } catch (e) {
+            console.warn('[gameVictory] Failed to add equipment to inventory', e);
+          }
+        }
+        chest.destroy();
+      }
+    });
+
+    this.scene.pause();
+
+    // 通关后解锁下一难度
+    SaveManager.completeDifficulty(this.gameDifficulty);
+
+    // 保存游戏数据到存档
+    SaveManager.addCoins(this.coinsCollected);
+    SaveManager.updateStatistics(
+      Math.floor(this.gameTime),
+      this.killCount,
+      this.difficultyLevel
+    );
+
+    const centerX = this.cameras.main.centerX;
+    const centerY = this.cameras.main.centerY;
+
+    // 创建全屏背景
+    const fullBg = this.add.rectangle(
+      centerX,
+      centerY,
+      this.cameras.main.width,
+      this.cameras.main.height,
+      0x000000,
+      0.9
+    );
+    fullBg.setScrollFactor(0);
+    fullBg.setDepth(5000);
+
+    // 左侧面板 - 胜利信息
+    const leftPanel = this.add.rectangle(
+      centerX - 300,
+      centerY,
+      500,
+      600,
+      0x1a1a2e,
+      0.95
+    );
+    leftPanel.setScrollFactor(0);
+    leftPanel.setDepth(5001);
+    leftPanel.setStrokeStyle(4, 0xffd700);
+
+    const victoryText = this.add.text(
+      centerX - 300,
+      centerY - 250,
+      "🏆 VICTORY! 🏆",
+      {
+        fontSize: "56px",
+        color: "#ffd700",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+        stroke: "#000000",
+        strokeThickness: 6,
+      }
+    );
+    victoryText.setOrigin(0.5);
+    victoryText.setScrollFactor(0);
+    victoryText.setDepth(5002);
+
+    // 胜利闪烁效果
+    this.tweens.add({
+      targets: victoryText,
+      scale: 1.1,
+      alpha: 0.8,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    const subText = this.add.text(
+      centerX - 300,
+      centerY - 180,
+      "击败了4个Boss！",
+      {
+        fontSize: "26px",
+        color: "#00ff00",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+      }
+    );
+    subText.setOrigin(0.5);
+    subText.setScrollFactor(0);
+    subText.setDepth(5002);
+
+    const minutes = Math.floor(this.gameTime / 60);
+    const seconds = Math.floor(this.gameTime % 60);
+
+    const statsText = this.add.text(
+      centerX - 300,
+      centerY - 80,
+      `⏱️ Time: ${minutes}:${seconds.toString().padStart(2, "0")}\n\n` +
+      `⚔️ Kills: ${this.killCount}\n\n` +
+      `📊 Level: ${this.playerLevel}\n\n` +
+      `💰 Coins: ${this.coinsCollected}\n\n` +
+      `🎲 Bonus Levels: ${this.bonusLevelCount}`,
+      {
+        fontSize: "22px",
+        color: "#ffffff",
+        fontFamily: "Arial",
+        align: "left",
+        lineSpacing: 5,
+      }
+    );
+    statsText.setOrigin(0.5);
+    statsText.setScrollFactor(0);
+    statsText.setDepth(5002);
+
+    // 显示总金币数
+    const totalCoins = SaveManager.getTotalCoins();
+    const totalCoinsText = this.add.text(
+      centerX - 300,
+      centerY + 130,
+      `💎 Total Coins: ${totalCoins}`,
+      {
+        fontSize: "24px",
+        color: "#ffd700",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+      }
+    );
+    totalCoinsText.setOrigin(0.5);
+    totalCoinsText.setScrollFactor(0);
+    totalCoinsText.setDepth(5002);
+
+    // 显示难度解锁信息
+    const nextDifficulty = this.gameDifficulty + 1;
+    if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
+      const nextDiffName = getDifficultyName(nextDifficulty as DifficultyLevel);
+      const nextDiffColor = getDifficultyColor(nextDifficulty as DifficultyLevel);
+      const unlockText = this.add.text(
+        centerX - 300,
+        centerY + 180,
+        `🎉 解锁: ${nextDiffName}`,
+        {
+          fontSize: "22px",
+          color: nextDiffColor,
+          fontFamily: "Arial",
+          fontStyle: "bold",
+        }
+      );
+      unlockText.setOrigin(0.5);
+      unlockText.setScrollFactor(0);
+      unlockText.setDepth(5002);
+
+      // 闪烁效果
+      this.tweens.add({
+        targets: unlockText,
+        alpha: 0.6,
+        duration: 500,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
+
+    const restartText = this.add.text(
+      centerX - 300,
+      centerY + 230,
+      "Press R to Restart",
+      {
+        fontSize: "20px",
+        color: "#00ff00",
+        fontFamily: "Arial",
+      }
+    );
+    restartText.setOrigin(0.5);
+    restartText.setScrollFactor(0);
+    restartText.setDepth(5002);
+
+    const menuText = this.add.text(
+      centerX - 300,
+      centerY + 260,
+      "Press M to Main Menu",
+      {
+        fontSize: "20px",
+        color: "#ffff00",
+        fontFamily: "Arial",
+      }
+    );
+    menuText.setOrigin(0.5);
+    menuText.setScrollFactor(0);
+    menuText.setDepth(5002);
+
+    // 右侧面板 - 收集物品
+    const rightPanel = this.add.rectangle(
+      centerX + 300,
+      centerY,
+      500,
+      600,
+      0x1a1a2e,
+      0.95
+    );
+    rightPanel.setScrollFactor(0);
+    rightPanel.setDepth(5001);
+    rightPanel.setStrokeStyle(4, 0xffd700);
+
+    const rewardsTitle = this.add.text(
+      centerX + 300,
+      centerY - 250,
+      "🎁 收集物品 🎁",
+      {
+        fontSize: "36px",
+        color: "#ffd700",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+      }
+    );
+    rewardsTitle.setOrigin(0.5);
+    rewardsTitle.setScrollFactor(0);
+    rewardsTitle.setDepth(5002);
+
+    // 显示金币数量
+    const coinCountText = this.add.text(
+      centerX + 300,
+      centerY - 190,
+      `💰 金币: ${this.coinsCollected}`,
+      {
+        fontSize: "28px",
+        color: "#ffd700",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+      }
+    );
+    coinCountText.setOrigin(0.5);
+    coinCountText.setScrollFactor(0);
+    coinCountText.setDepth(5002);
+
+    // 显示宝箱装备
+    const chestsTitle = this.add.text(
+      centerX + 300,
+      centerY - 140,
+      "📦 获得装备:",
+      {
+        fontSize: "24px",
+        color: "#ffaa00",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+      }
+    );
+    chestsTitle.setOrigin(0.5);
+    chestsTitle.setScrollFactor(0);
+    chestsTitle.setDepth(5002);
+
+    if (collectedChests.length === 0) {
+      const noChestsText = this.add.text(
+        centerX + 300,
+        centerY - 90,
+        "（无装备掉落）",
+        {
+          fontSize: "18px",
+          color: "#888888",
+          fontFamily: "Arial",
+          fontStyle: "italic",
+        }
+      );
+      noChestsText.setOrigin(0.5);
+      noChestsText.setScrollFactor(0);
+      noChestsText.setDepth(5002);
+    } else {
+      // 显示装备列表（最多显示5个）
+      const maxDisplay = Math.min(collectedChests.length, 5);
+      for (let i = 0; i < maxDisplay; i++) {
+        const chest = collectedChests[i];
+        const eq = getEquipmentById(chest.id);
+        const quality = chest.quality !== undefined ? chest.quality : Rarity.Common;
+        const equipName = eq ? generateEquipmentName(eq.name, chest.affixes || [], quality) : `未知装备 (${chest.id})`;
+        const equipColor = getQualityColor(quality);
+
+        const equipText = this.add.text(
+          centerX + 120,
+          centerY - 90 + i * 30,
+          `• ${equipName}`,
+          {
+            fontSize: "16px",
+            color: equipColor,
+            fontFamily: "Arial",
+            wordWrap: { width: 340 },
+          }
+        );
+        equipText.setOrigin(0, 0.5);
+        equipText.setScrollFactor(0);
+        equipText.setDepth(5002);
+      }
+
+      if (collectedChests.length > 5) {
+        const moreText = this.add.text(
+          centerX + 300,
+          centerY + 60,
+          `...以及其他 ${collectedChests.length - 5} 件装备`,
+          {
+            fontSize: "14px",
+            color: "#aaaaaa",
+            fontFamily: "Arial",
+            fontStyle: "italic",
+          }
+        );
+        moreText.setOrigin(0.5);
+        moreText.setScrollFactor(0);
+        moreText.setDepth(5002);
+      }
+
+      // 提示装备已放入背包
+      const bagHint = this.add.text(
+        centerX + 300,
+        centerY + 100,
+        "✓ 所有装备已放入背包",
+        {
+          fontSize: "18px",
+          color: "#4caf50",
+          fontFamily: "Arial",
+          fontStyle: "italic",
+        }
+      );
+      bagHint.setOrigin(0.5);
+      bagHint.setScrollFactor(0);
+      bagHint.setDepth(5002);
+    }
+
+    this.input.keyboard!.once("keydown-R", () => {
+      this.scene.restart();
+    });
+
+    this.input.keyboard!.once("keydown-M", () => {
+      this.scene.start("MenuScene");
+    });
+  }
+
   gameOver() {
     this.scene.pause();
+
+    // 检查是否达到解锁下一难度的条件（例如：生存到一定波数）
+    const unlockThreshold = 10; // 需要生存到第10波才能解锁下一难度
+    if (this.difficultyLevel >= unlockThreshold) {
+      SaveManager.completeDifficulty(this.gameDifficulty);
+    }
 
     // 保存游戏数据到存档
     SaveManager.addCoins(this.coinsCollected);
@@ -2612,10 +3022,41 @@ export class GameScene extends Phaser.Scene {
     );
     totalCoinsText.setOrigin(0.5);
     totalCoinsText.setScrollFactor(0);
+    
+    // 显示难度解锁信息
+    if (this.difficultyLevel >= unlockThreshold) {
+      const nextDifficulty = this.gameDifficulty + 1;
+      if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
+        const nextDiffName = getDifficultyName(nextDifficulty as DifficultyLevel);
+        const nextDiffColor = getDifficultyColor(nextDifficulty as DifficultyLevel);
+        const unlockText = this.add.text(
+          this.cameras.main.centerX,
+          this.cameras.main.centerY + 70,
+          `🎉 解锁新难度: ${nextDiffName} 🎉`,
+          {
+            fontSize: "22px",
+            color: nextDiffColor,
+            fontFamily: "Arial",
+            fontStyle: "bold"
+          }
+        );
+        unlockText.setOrigin(0.5);
+        unlockText.setScrollFactor(0);
+        
+        // 闪烁效果
+        this.tweens.add({
+          targets: unlockText,
+          alpha: 0.5,
+          duration: 500,
+          yoyo: true,
+          repeat: -1
+        });
+      }
+    }
 
     const restartText = this.add.text(
       this.cameras.main.centerX,
-      this.cameras.main.centerY + 80,
+      this.cameras.main.centerY + 110,
       "Press R to Restart",
       {
         fontSize: "20px",
@@ -2944,7 +3385,10 @@ export class GameScene extends Phaser.Scene {
     this.enemyManager.setDifficulty(this.difficultyLevel);
 
     // 更新难度显示
-    this.diffText.setText(`难度: ${this.difficultyLevel}`);
+    const difficultyName = getDifficultyName(this.gameDifficulty);
+    const difficultyColor = getDifficultyColor(this.gameDifficulty);
+    this.diffText.setText(`游戏难度: ${difficultyName} | 波数: ${this.difficultyLevel}`);
+    this.diffText.setStyle({ color: difficultyColor });
 
     // 显示难度提升提示
     const diffText = this.add.text(

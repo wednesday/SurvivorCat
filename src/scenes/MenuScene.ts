@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SaveManager } from '../systems/SaveManager';
+import { DifficultyLevel, getDifficultyConfig, getAllDifficulties } from '../config/DifficultyConfig';
 
 export class MenuScene extends Phaser.Scene {
   private startButton!: Phaser.GameObjects.Text;
@@ -8,6 +9,11 @@ export class MenuScene extends Phaser.Scene {
   private subtitleText!: Phaser.GameObjects.Text;
   private instructionsText!: Phaser.GameObjects.Text;
   private saveInfoText!: Phaser.GameObjects.Text;
+  private currentDifficulty: DifficultyLevel = DifficultyLevel.NORMAL;
+  private difficultySelect: HTMLSelectElement | null = null;
+  private difficultyLabel!: Phaser.GameObjects.Text;
+  private difficultyDescText!: Phaser.GameObjects.Text;
+  private resizeListener: (() => void) | null = null;
   
   constructor() {
     super({ key: 'MenuScene' });
@@ -113,6 +119,9 @@ export class MenuScene extends Phaser.Scene {
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
     
+    // 加载当前难度
+    this.currentDifficulty = SaveManager.getDifficulty();
+    
     // 创建背景效果
     this.createBackground();
     
@@ -158,6 +167,9 @@ export class MenuScene extends Phaser.Scene {
     // 显示存档信息
     const hasSave = SaveManager.hasSave();
     const totalCoins = SaveManager.getTotalCoins();
+    
+    // 创建难度选择UI（在显示存档信息之后）
+    this.createDifficultyDropdown();
     
     if (hasSave) {
       this.saveInfoText = this.add.text(
@@ -410,6 +422,156 @@ export class MenuScene extends Phaser.Scene {
     });
   }
   
+  createDifficultyDropdown() {
+    const centerX = this.cameras.main.centerX;
+    const centerY = this.cameras.main.centerY;
+    
+    // 难度选择标题
+    this.difficultyLabel = this.add.text(
+      200,
+      15,
+      '难度:',
+      {
+        fontSize: '16px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    );
+    
+    // 创建HTML下拉选择框
+    this.difficultySelect = document.createElement('select');
+    this.difficultySelect.id = 'difficulty-selector';
+    this.difficultySelect.style.position = 'absolute';
+    this.difficultySelect.style.fontSize = '14px';
+    this.difficultySelect.style.fontFamily = 'Arial';
+    this.difficultySelect.style.backgroundColor = '#333333';
+    this.difficultySelect.style.color = '#ffffff';
+    this.difficultySelect.style.border = '2px solid #888888';
+    this.difficultySelect.style.borderRadius = '5px';
+    this.difficultySelect.style.padding = '4px';
+    this.difficultySelect.style.cursor = 'pointer';
+    this.difficultySelect.style.zIndex = '1000';
+    this.difficultySelect.style.outline = 'none';
+    this.difficultySelect.style.boxSizing = 'border-box';
+    
+    // 初始位置和大小将由updateDifficultyPosition设置
+    
+    // 获取已解锁的难度
+    const unlockedDifficulties = SaveManager.getUnlockedDifficulties();
+    const allDifficulties = getAllDifficulties();
+    
+    // 添加选项
+    allDifficulties.forEach(diff => {
+      const option = document.createElement('option');
+      option.value = diff.level.toString();
+      
+      const isUnlocked = unlockedDifficulties.includes(diff.level);
+      if (isUnlocked) {
+        option.text = diff.name;
+        option.style.color = diff.color;
+      } else {
+        option.text = `${diff.name} (🔒未解锁)`;
+        option.disabled = true;
+        option.style.color = '#666666';
+      }
+      
+      if (diff.level === this.currentDifficulty) {
+        option.selected = true;
+      }
+      
+      if (this.difficultySelect) {
+        this.difficultySelect.appendChild(option);
+      }
+    });
+    
+    // 添加到DOM
+    if (this.difficultySelect) {
+      document.body.appendChild(this.difficultySelect);
+      console.log('Difficulty select added to DOM:', this.difficultySelect);
+      console.log('Unlocked difficulties:', unlockedDifficulties);
+    
+      // 监听变化
+      this.difficultySelect.addEventListener('change', (e) => {
+        const selectedLevel = parseInt((e.target as HTMLSelectElement).value) as DifficultyLevel;
+        this.selectDifficulty(selectedLevel);
+      });
+      
+      // 初始化位置和大小
+      this.updateDifficultyPosition();
+      
+      // 添加窗口resize监听器
+      this.resizeListener = () => this.updateDifficultyPosition();
+      window.addEventListener('resize', this.resizeListener);
+    }
+    
+    // 当前难度描述（移到左上角下方）
+    const currentConfig = getDifficultyConfig(this.currentDifficulty);
+    this.difficultyDescText = this.add.text(
+      420,
+      15,
+      `${currentConfig.description}`,
+      {
+        fontSize: '12px',
+        color: currentConfig.color,
+        fontFamily: 'Arial',
+        wordWrap: { width: 350 }
+      }
+    );
+  }
+  
+  updateDifficultyPosition() {
+    if (!this.difficultySelect) return;
+    
+    // 获取canvas元素和其位置
+    const canvas = this.game.canvas;
+    const canvasRect = canvas.getBoundingClientRect();
+    
+    // 计算相对于canvas的位置（考虑缩放）
+    const gameWidth = typeof this.game.config.width === 'number' ? this.game.config.width : 1280;
+    const scale = canvasRect.width / gameWidth;
+    const labelX = 250; // 难度选择框的目标x位置
+    const labelY = 10;  // 难度选择框的目标y位置
+    
+    // 设置位置（相对于页面）
+    this.difficultySelect.style.left = (canvasRect.left + labelX * scale) + 'px';
+    this.difficultySelect.style.top = (canvasRect.top + labelY * scale) + 'px';
+    this.difficultySelect.style.width = (150 * scale) + 'px';
+    this.difficultySelect.style.height = (30 * scale) + 'px';
+    this.difficultySelect.style.fontSize = (14 * scale) + 'px';
+  }
+  
+  selectDifficulty(level: DifficultyLevel) {
+    this.currentDifficulty = level;
+    SaveManager.setDifficulty(level);
+    
+    // 更新描述文字
+    const currentConfig = getDifficultyConfig(level);
+    if (this.difficultyDescText) {
+      this.difficultyDescText.setText(currentConfig.description);
+      this.difficultyDescText.setStyle({ color: currentConfig.color });
+    }
+    
+    // 更新下拉框选择
+    if (this.difficultySelect) {
+      this.difficultySelect.value = level.toString();
+    }
+  }
+  
+  shutdown() {
+    // 清理DOM元素
+    if (this.difficultySelect && this.difficultySelect.parentNode) {
+      this.difficultySelect.parentNode.removeChild(this.difficultySelect);
+      this.difficultySelect = null;
+    }
+    
+    // 移除resize监听器
+    if (this.resizeListener) {
+      window.removeEventListener('resize', this.resizeListener);
+      this.resizeListener = null;
+    }
+  }
+  
   createBackground() {
     // 创建渐变背景效果
     const graphics = this.add.graphics();
@@ -634,6 +796,9 @@ export class MenuScene extends Phaser.Scene {
   }
   
   startGame() {
+    // 清理DOM元素
+    this.shutdown();
+    
     // 添加过渡效果
     this.cameras.main.fadeOut(500, 0, 0, 0);
     
@@ -646,6 +811,9 @@ export class MenuScene extends Phaser.Scene {
   }
   
   openInventory() {
+    // 清理DOM元素
+    this.shutdown();
+    
     // 切换到装备管理场景
     this.cameras.main.fadeOut(300, 0, 0, 0);
     
