@@ -185,28 +185,19 @@ export class GameScene extends Phaser.Scene {
     // 创建金币组
     this.coins = this.physics.add.group();
 
-    // 初始化技能管理系统（每次create时重置）
-    if (!this.skillManager) {
-      this.skillManager = new SkillManager();
-      this.explosionSystem = new ExplosionSystem(this);
-    } else {
-      this.skillManager.reset();
-    }
+    // 初始化技能管理系统（每次create时都重新创建以确保状态干净）
+    this.skillManager = new SkillManager();
+    this.explosionSystem = new ExplosionSystem(this);
 
-    // 初始化敌人管理器（在enemies组创建之后）
-    if (!this.enemyManager) {
-      this.enemyManager = new EnemyManager(
-        this,
-        this.enemies,
-        this.player,
-        this.mapWidth,
-        this.mapHeight,
-        this.gameDifficulty
-      );
-    } else {
-      this.enemyManager.reset();
-      this.enemyManager.setGameDifficulty(this.gameDifficulty);
-    }
+    // 初始化敌人管理器（在enemies组创建之后，每次都重新创建）
+    this.enemyManager = new EnemyManager(
+      this,
+      this.enemies,
+      this.player,
+      this.mapWidth,
+      this.mapHeight,
+      this.gameDifficulty
+    );
 
     // 设置初始难度
     this.enemyManager.setDifficulty(this.difficultyLevel);
@@ -299,9 +290,6 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on("keydown-ESC", this.togglePause, this);
     this.input.keyboard!.on("keydown-P", this.togglePause, this);
 
-    // 初始化技能管理系统
-    this.skillManager = new SkillManager();
-    this.explosionSystem = new ExplosionSystem(this);
     // 初始化装备管理器（会从存档加载已装备物品并将效果应用到 skillManager）
     this.equipmentManager = new EquipmentManager(this.skillManager);
 
@@ -1195,11 +1183,11 @@ export class GameScene extends Phaser.Scene {
 
     // 如果提供了激光对象，检查该激光是否已经击中过这个敌人
     if (laser && (laser as any).hitEnemies) {
-      const enemyId = enemy.getData ? enemy.getData('id') || enemy.name : enemy.name;
-      if ((laser as any).hitEnemies.has(enemyId)) {
+      // 使用敌人对象本身作为唯一标识（Set可以存储对象引用）
+      if ((laser as any).hitEnemies.has(enemy)) {
         return; // 该激光已经击中过这个敌人，跳过
       }
-      (laser as any).hitEnemies.add(enemyId);
+      (laser as any).hitEnemies.add(enemy);
     }
 
     // 检查是否已经被激光击中过（全局冷却，避免重复伤害）
@@ -1982,6 +1970,8 @@ export class GameScene extends Phaser.Scene {
       if (upgradeCount < 2) {
         this.showTreasureUpgrade(upgradeCount + 1);
       } else {
+        this.isPaused = false;
+        this.isUpgrading = false;
         this.physics.resume();
       }
       return;
@@ -2015,6 +2005,7 @@ export class GameScene extends Phaser.Scene {
           });
         } else {
           // 两次升级完成，恢复游戏
+          this.isPaused = false;
           this.isUpgrading = false;
           this.physics.resume();
         }
@@ -2225,8 +2216,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   showUpgradeOptions() {
-    // 设置升级中标志
+    // 设置升级中标志和暂停标志
     this.isUpgrading = true;
+    this.isPaused = true;
     
     // 创建半透明背景
     const overlay = this.add.rectangle(
@@ -2300,6 +2292,8 @@ export class GameScene extends Phaser.Scene {
       overlay.destroy();
       title.destroy();
       bonusHint.destroy();
+      this.isPaused = false;
+      this.isUpgrading = false;
       this.physics.resume();
       return;
     }
@@ -2409,6 +2403,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       // 没有触发连续升级，重置连续链，恢复游戏
       this.bonusLevelChain = 0;
+      this.isPaused = false;
       this.physics.resume();
     }
   }
@@ -2601,7 +2596,75 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // 清理场景状态
+  cleanupScene() {
+    console.log('清理场景状态...');
+    
+    // 清理所有组
+    if (this.enemies) {
+      this.enemies.clear(true, true);
+    }
+    if (this.projectiles) {
+      this.projectiles.clear(true, true);
+    }
+    if (this.bossProjectiles) {
+      this.bossProjectiles.clear(true, true);
+    }
+    if (this.expOrbs) {
+      this.expOrbs.clear(true, true);
+    }
+    if (this.magnetItems) {
+      this.magnetItems.clear(true, true);
+    }
+    if (this.treasureChests) {
+      this.treasureChests.clear(true, true);
+    }
+    if (this.coins) {
+      this.coins.clear(true, true);
+    }
+    
+    // 清理轨道球
+    if (this.orbitals && this.orbitals.length > 0) {
+      this.orbitals.forEach(orbital => {
+        if (orbital && orbital.active) {
+          orbital.destroy();
+        }
+      });
+      this.orbitals = [];
+    }
+    
+    // 清理激光
+    if (this.lasers && this.lasers.length > 0) {
+      this.lasers.forEach(laser => {
+        if (laser && laser.active) {
+          laser.destroy();
+        }
+      });
+      this.lasers = [];
+    }
+    
+    // 重置游戏状态标志
+    this.isPaused = false;
+    this.isUpgrading = false;
+    
+    // 重置游戏进度变量
+    this.difficultyLevel = 1;
+    this.gameTime = 0;
+    this.lastDifficultyIncreaseTime = 0;
+    this.killCount = 0;
+    this.coinsCollected = 0;
+    this.bossesDefeated = 0;
+    this.playerLevel = 1;
+    this.exp = 0;
+    this.bonusLevelCount = 0;
+    this.bonusLevelChain = 0;
+    
+    console.log('场景清理完成');
+  }
+
   gameVictory() {
+    this.isPaused = true;
+    
     // 收集场上所有金币和宝箱
     const collectedCoins: { value: number }[] = [];
     const collectedChests: any[] = [];
@@ -2635,7 +2698,8 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.scene.pause();
+    // 不要暂停场景，保持输入处理活跃
+    // this.scene.pause();
 
     // 通关后解锁下一难度
     SaveManager.completeDifficulty(this.gameDifficulty);
@@ -2788,35 +2852,102 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    // 创建重启按钮
+    const restartButton = this.add.rectangle(
+      centerX - 300,
+      centerY + 230,
+      200,
+      50,
+      0x00aa00
+    );
+    restartButton.setStrokeStyle(3, 0x00ff00);
+    restartButton.setScrollFactor(0);
+    restartButton.setDepth(10000);
+    restartButton.setInteractive({ useHandCursor: true });
+    this.input.setTopOnly(false);
+
     const restartText = this.add.text(
       centerX - 300,
       centerY + 230,
-      "Press R to Restart",
+      "重新开始",
       {
-        fontSize: "20px",
-        color: "#00ff00",
+        fontSize: "24px",
+        color: "#ffffff",
         fontFamily: "Arial",
+        fontStyle: "bold",
       }
     );
     restartText.setOrigin(0.5);
     restartText.setScrollFactor(0);
-    restartText.setDepth(5002);
+    restartText.setDepth(10001);
+    restartText.setInteractive(false);
+
+    // 创建菜单按钮
+    const menuButton = this.add.rectangle(
+      centerX - 300,
+      centerY + 290,
+      200,
+      50,
+      0xaa8800
+    );
+    menuButton.setStrokeStyle(3, 0xffff00);
+    menuButton.setScrollFactor(0);
+    menuButton.setDepth(10000);
+    menuButton.setInteractive({ useHandCursor: true });
 
     const menuText = this.add.text(
       centerX - 300,
-      centerY + 260,
-      "Press M to Main Menu",
+      centerY + 290,
+      "返回菜单",
       {
-        fontSize: "20px",
-        color: "#ffff00",
+        fontSize: "24px",
+        color: "#ffffff",
         fontFamily: "Arial",
+        fontStyle: "bold",
       }
     );
     menuText.setOrigin(0.5);
     menuText.setScrollFactor(0);
-    menuText.setDepth(5002);
+    menuText.setDepth(10001);
+    menuText.setInteractive(false);
 
-    // 右侧面板 - 收集物品
+    // 按钮悬停效果
+    restartButton.on('pointerover', () => {
+      restartButton.setFillStyle(0x00ff00);
+      restartButton.setScale(1.05);
+      restartText.setScale(1.05);
+    });
+
+    restartButton.on('pointerout', () => {
+      restartButton.setFillStyle(0x00aa00);
+      restartButton.setScale(1);
+      restartText.setScale(1);
+    });
+
+    menuButton.on('pointerover', () => {
+      menuButton.setFillStyle(0xffff00);
+      menuButton.setScale(1.05);
+      menuText.setScale(1.05);
+    });
+
+    menuButton.on('pointerout', () => {
+      menuButton.setFillStyle(0xaa8800);
+      menuButton.setScale(1);
+      menuText.setScale(1);
+    });
+
+    // 按钮点击事件
+    restartButton.on('pointerdown', () => {
+      console.log('胜利界面-重新开始按钮被点击');
+      this.cleanupScene();
+      this.scene.restart();
+    });
+
+    menuButton.on('pointerdown', () => {
+      console.log('胜利界面-返回菜单按钮被点击');
+      this.scene.stop();
+      this.scene.start("MenuScene");
+    });
     const rightPanel = this.add.rectangle(
       centerX + 300,
       centerY,
@@ -2950,32 +3081,12 @@ export class GameScene extends Phaser.Scene {
       bagHint.setScrollFactor(0);
       bagHint.setDepth(5002);
     }
-
-    // 使用键盘对象监听按键，确保在场景暂停时也能响应
-    const rKey = this.input.keyboard!.addKey('R');
-    const mKey = this.input.keyboard!.addKey('M');
-    
-    rKey.once('down', () => {
-      // 清理按键监听
-      rKey.destroy();
-      mKey.destroy();
-      // 恢复场景并重启
-      this.scene.resume();
-      this.scene.restart();
-    });
-
-    mKey.once('down', () => {
-      // 清理按键监听
-      rKey.destroy();
-      mKey.destroy();
-      // 停止当前场景并切换到菜单
-      this.scene.stop();
-      this.scene.start("MenuScene");
-    });
   }
 
   gameOver() {
-    this.scene.pause();
+    this.isPaused = true;
+    // 不暂停场景，保持输入处理活跃
+    // this.scene.pause();
 
     // 检查是否达到解锁下一难度的条件（例如：生存到一定波数）
     const unlockThreshold = 10; // 需要生存到第10波才能解锁下一难度
@@ -3000,6 +3111,7 @@ export class GameScene extends Phaser.Scene {
       0.8
     );
     bg.setScrollFactor(0);
+    bg.setDepth(5000);
 
     const gameOverText = this.add.text(
       this.cameras.main.centerX,
@@ -3013,6 +3125,7 @@ export class GameScene extends Phaser.Scene {
     );
     gameOverText.setOrigin(0.5);
     gameOverText.setScrollFactor(0);
+    gameOverText.setDepth(5001);
 
     const minutes = Math.floor(this.gameTime / 60);
     const seconds = Math.floor(this.gameTime % 60);
@@ -3034,6 +3147,7 @@ export class GameScene extends Phaser.Scene {
     );
     statsText.setOrigin(0.5);
     statsText.setScrollFactor(0);
+    statsText.setDepth(5001);
 
     // 显示总金币数
     const totalCoins = SaveManager.getTotalCoins();
@@ -3049,6 +3163,7 @@ export class GameScene extends Phaser.Scene {
     );
     totalCoinsText.setOrigin(0.5);
     totalCoinsText.setScrollFactor(0);
+    totalCoinsText.setDepth(5001);
     
     // 显示难度解锁信息
     if (this.difficultyLevel >= unlockThreshold) {
@@ -3081,50 +3196,96 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // 创建重启按钮
+    const restartButton = this.add.rectangle(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY + 110,
+      200,
+      50,
+      0x00aa00
+    );
+    restartButton.setStrokeStyle(3, 0x00ff00);
+    restartButton.setScrollFactor(0);
+    restartButton.setDepth(10000);
+    restartButton.setInteractive({ useHandCursor: true });
+
     const restartText = this.add.text(
       this.cameras.main.centerX,
       this.cameras.main.centerY + 110,
-      "Press R to Restart",
+      "重新开始",
       {
-        fontSize: "20px",
-        color: "#00ff00",
+        fontSize: "24px",
+        color: "#ffffff",
         fontFamily: "Arial",
+        fontStyle: "bold",
       }
     );
     restartText.setOrigin(0.5);
     restartText.setScrollFactor(0);
+    restartText.setDepth(10001);
+
+    // 创建菜单按钮
+    const menuButton = this.add.rectangle(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY + 170,
+      200,
+      50,
+      0xaa8800
+    );
+    menuButton.setStrokeStyle(3, 0xffff00);
+    menuButton.setScrollFactor(0);
+    menuButton.setDepth(10000);
+    menuButton.setInteractive({ useHandCursor: true });
 
     const menuText = this.add.text(
       this.cameras.main.centerX,
-      this.cameras.main.centerY + 120,
-      "Press M to Main Menu",
+      this.cameras.main.centerY + 170,
+      "返回菜单",
       {
-        fontSize: "20px",
-        color: "#ffff00",
+        fontSize: "24px",
+        color: "#ffffff",
         fontFamily: "Arial",
+        fontStyle: "bold",
       }
     );
     menuText.setOrigin(0.5);
     menuText.setScrollFactor(0);
+    menuText.setDepth(10001);
 
-    // 使用键盘对象监听按键，确保在场景暂停时也能响应
-    const rKey = this.input.keyboard!.addKey('R');
-    const mKey = this.input.keyboard!.addKey('M');
-    
-    rKey.once('down', () => {
-      // 清理按键监听
-      rKey.destroy();
-      mKey.destroy();
-      // 恢复场景并重启
-      this.scene.resume();
+    // 按钮悬停效果
+    restartButton.on('pointerover', () => {
+      restartButton.setFillStyle(0x00ff00);
+      restartButton.setScale(1.05);
+      restartText.setScale(1.05);
+    });
+
+    restartButton.on('pointerout', () => {
+      restartButton.setFillStyle(0x00aa00);
+      restartButton.setScale(1);
+      restartText.setScale(1);
+    });
+
+    menuButton.on('pointerover', () => {
+      menuButton.setFillStyle(0xffff00);
+      menuButton.setScale(1.05);
+      menuText.setScale(1.05);
+    });
+
+    menuButton.on('pointerout', () => {
+      menuButton.setFillStyle(0xaa8800);
+      menuButton.setScale(1);
+      menuText.setScale(1);
+    });
+
+    // 按钮点击事件
+    restartButton.on('pointerdown', () => {
+      console.log('游戏结束界面-重新开始按钮被点击');
+      this.cleanupScene();
       this.scene.restart();
     });
 
-    mKey.once('down', () => {
-      // 清理按键监听
-      rKey.destroy();
-      mKey.destroy();
-      // 停止当前场景并切换到菜单
+    menuButton.on('pointerdown', () => {
+      console.log('游戏结束界面-返回菜单按钮被点击');
       this.scene.stop();
       this.scene.start("MenuScene");
     });
@@ -3232,19 +3393,26 @@ export class GameScene extends Phaser.Scene {
       const body = projectile.body as Phaser.Physics.Arcade.Body;
       if (!body) return;
       
-      // 弧形运动：随时间增加横向偏移
+      // 弧形运动：通过累积角度变化来实现真正的弧线
       const timeAlive = this.gameTime - (projectile as any).createdTime;
-      const curveFactor = Math.sin(timeAlive * 3) * 50; // 正弦波产生弧形
       
-      const initialAngle = (projectile as any).initialAngle;
-      const perpAngle = initialAngle + Math.PI / 2; // 垂直于初始方向
+      // 初始化当前角度
+      if (projectile.currentAngle === undefined) {
+        projectile.currentAngle = (projectile as any).initialAngle;
+      }
       
-      // 保持原速度，添加横向偏移
-      const speed = Math.sqrt(body.velocity.x ** 2 + body.velocity.y ** 2);
-      const newVx = Math.cos(initialAngle) * speed + Math.cos(perpAngle) * curveFactor;
-      const newVy = Math.sin(initialAngle) * speed + Math.sin(perpAngle) * curveFactor;
+      // 角度变化率（弧度/秒）- 使用余弦函数让子弹左右摆动
+      const turnRate = Math.cos(timeAlive * 4) * 2.5; // 每秒4次振荡，最大转向速度±2.5弧度/秒
       
-      body.setVelocity(newVx, newVy);
+      // 累积角度变化（关键！每帧累加，而不是重新计算）
+      projectile.currentAngle += turnRate * (delta / 1000); // delta是毫秒
+      
+      // 保持恒定速度，方向由当前角度决定
+      const speed = 220;
+      body.setVelocity(
+        Math.cos(projectile.currentAngle) * speed,
+        Math.sin(projectile.currentAngle) * speed
+      );
     });
 
     // 自动射击
@@ -3280,7 +3448,7 @@ export class GameScene extends Phaser.Scene {
         // 敌人位置
         const enemyX = (enemy as any).x;
         const enemyY = (enemy as any).y;
-        const enemyRadius = 20; // 敌人碰撞半径
+        const enemyRadius = 25; // 敌人碰撞半径（增大）
         
         // 计算点到线段的距离
         const distance = this.pointToLineSegmentDistance(
@@ -3289,8 +3457,9 @@ export class GameScene extends Phaser.Scene {
           laserEndX, laserEndY
         );
         
-        // 如果距离小于敌人半径 + 激光宽度的一半，则视为击中
-        if (distance < enemyRadius + 2) { // 2 是激光宽度的一半
+        // 如果距离小于敌人半径 + 激光半宽，则视为击中
+        // 增加判定范围，让激光更容易击中
+        if (distance < enemyRadius + 10) { // 10像素的容差
           this.hitEnemyWithLaser(enemy, laser);
         }
       });

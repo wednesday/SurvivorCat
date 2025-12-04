@@ -343,7 +343,7 @@ export class EnemyManager {
     enemyExtended.maxHP = finalHP;
     enemyExtended.damage = finalDamage;
     enemyExtended.speed = finalSpeed;
-    enemyExtended.expValue = config.expValue;
+    enemyExtended.expValue = stats.expValue;
     
     // 标记Boss和类型
     (enemyExtended as any).isBoss = config.isBoss;

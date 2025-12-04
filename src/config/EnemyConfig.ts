@@ -17,10 +17,11 @@ export interface EnemyConfig {
   type: EnemyType;
   name: string;
   
-  // 基础属性
-  baseHP: number;              // 基础生命值
-  baseDamage: number;          // 基础伤害
-  baseSpeed: number;           // 基础移动速度
+  // 基础属性（数组索引对应难度等级，从1开始）
+  hp: number[];                // 各难度生命值
+  damage: number[];            // 各难度伤害
+  speed: number[];             // 各难度移动速度
+  expValue: number[];          // 各难度经验值
   
   // 视觉属性
   spriteKey: string;           // 精灵图key
@@ -28,14 +29,8 @@ export interface EnemyConfig {
   scale: number;               // 缩放比例
   tint?: number;               // 色调（可选）
   
-  // 掉落属性
-  expValue: number;            // 经验值
-  
-  // 生成权重（用于随机生成）
-  spawnWeight: number;         // 权重越高越容易生成
-  
-  // 解锁条件
-  unlockDifficulty: number;    // 在哪个难度等级解锁
+  // 生成密度（数组索引对应难度等级，值越高越容易生成）
+  spawnDensity: number[];      // 各难度的生成密度权重
   
   // Boss属性
   isBoss: boolean;             // 是否为Boss
@@ -62,17 +57,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SLIME_RED,
     name: '红色史莱姆',
     
-    baseHP: 2,
-    baseDamage: 10,
-    baseSpeed: 80,
+    // 难度1-15的属性值
+    hp: [2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 7, 7, 8],
+    damage: [10, 10, 10, 10, 10, 10, 15, 15, 15, 15, 15, 18, 18, 18, 18],
+    speed: [80, 80, 80, 90, 90, 90, 100, 100, 100, 120, 120, 120, 120, 120, 120],
+    expValue: [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3],
     
     spriteKey: 'slime-red',
     animKey: 'slime-red-idle',
     scale: 2.5,
     
-    expValue: 1,
-    spawnWeight: 100,
-    unlockDifficulty: 1,
+    // 难度1-15的生成密度（从难度1开始就可以生成）
+    spawnDensity: [100, 100, 90, 80, 70, 60, 50, 40, 30, 25, 20, 15, 10, 5, 5],
     isBoss: false
   },
   
@@ -82,17 +78,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SLIME_BLUE,
     name: '蓝色史莱姆',
     
-    baseHP: 4,
-    baseDamage: 15,
-    baseSpeed: 90,
+    // 难度1-15的属性值
+    hp: [0, 4, 4, 6, 6, 8, 8, 12, 12, 12, 16, 16, 16, 20, 24],
+    damage: [0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+    speed: [0, 90, 90, 90, 100, 100, 100, 110, 110, 110, 120, 130, 130, 130, 130],
+    expValue: [0, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 6, 6],
     
     spriteKey: 'slime-blue',
     animKey: 'slime-blue-idle',
     scale: 2.5,
     
-    expValue: 2,
-    spawnWeight: 60,
-    unlockDifficulty: 2,
+    // 难度2开始出现，逐渐增加密度
+    spawnDensity: [0, 40, 50, 60, 60, 70, 70, 60, 60, 45, 30, 25, 20, 15, 10],
     isBoss: false
   },
   
@@ -102,17 +99,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SLIME_GREEN,
     name: '绿色史莱姆',
     
-    baseHP: 8,
-    baseDamage: 20,
-    baseSpeed: 100,
+    // 难度1-15的属性值
+    hp: [0, 0, 0, 0, 12, 12, 12, 12, 20, 20, 20, 30, 30, 30, 40],
+    damage: [0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+    speed: [0, 0, 0, 0, 100, 100, 100, 110, 110, 110, 120, 120, 140, 140, 140],
+    expValue: [0, 0, 0, 0, 4, 4, 6, 6, 6, 6, 6, 8, 8, 8, 8],
     
     spriteKey: 'slime-green',
     animKey: 'slime-green-idle',
     scale: 2.5,
     
-    expValue: 3,
-    spawnWeight: 30,
-    unlockDifficulty: 3,
+    // 难度5开始出现
+    spawnDensity: [0, 0, 0, 0, 50, 60, 70, 70, 60, 50, 45, 40, 35, 30, 25],
     isBoss: false
   },
   
@@ -122,17 +120,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SLIME_YELLOW,
     name: '黄色史莱姆',
     
-    baseHP: 16,
-    baseDamage: 25,
-    baseSpeed: 110,
+    // 难度1-15的属性值
+    hp: [0, 0, 0, 0, 0, 0, 0, 0, 40, 40, 40, 60, 60, 60, 80],
+    damage: [0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10],
+    speed: [0, 0, 0, 0, 110, 110, 110, 125, 125, 125, 125, 150, 150, 150, 180],
+    expValue: [0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 12, 12, 16, 18],
     
     spriteKey: 'slime-yellow',
     animKey: 'slime-yellow-idle',
     scale: 2.5,
     
-    expValue: 4,
-    spawnWeight: 15,
-    unlockDifficulty: 5,
+    // 难度5开始出现
+    spawnDensity: [0, 0, 0, 0, 0, 0, 0, 0, 55, 60, 60, 55, 50, 45, 40],
     isBoss: false
   },
   
@@ -142,17 +141,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.BUGBIT,
     name: 'BugBit Boss',
     
-    baseHP: 50,
-    baseDamage: 35,
-    baseSpeed: 70,
+    // 难度1-15的属性值（难度3出现）
+    hp: [0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    damage: [0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    speed: [0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    expValue: [0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     
     spriteKey: 'bugbit',
     animKey: 'bugbit-walk',
     scale: 3.5,
     
-    expValue: 20,
-    spawnWeight: 0,  // Boss不参与随机生成
-    unlockDifficulty: 3,
+    // Boss在特定难度出现（密度为0表示不通过随机生成）
+    spawnDensity: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     isBoss: true
   },
   
@@ -162,17 +162,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.PEBBLIN,
     name: 'Pebblin Boss',
     
-    baseHP: 80,
-    baseDamage: 45,
-    baseSpeed: 60,
+    // 难度1-15的属性值（难度6出现）
+    hp: [0, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    damage: [0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    speed: [0, 0, 0, 0, 0, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    expValue: [0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     
     spriteKey: 'pebblin',
     animKey: 'pebblin-idle',
     scale: 4.0,
     
-    expValue: 35,
-    spawnWeight: 0,
-    unlockDifficulty: 6,
+    // Boss在特定难度出现
+    spawnDensity: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     isBoss: true
   },
   
@@ -182,17 +183,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SPORA,
     name: 'Spora Boss',
     
-    baseHP: 120,
-    baseDamage: 55,
-    baseSpeed: 75,
+    // 难度1-15的属性值（难度9出现）
+    hp: [0, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0, 0, 0, 0],
+    damage: [0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0],
+    speed: [0, 0, 0, 0, 0, 0, 0, 0, 180, 0, 0, 0, 0, 0, 0],
+    expValue: [0, 0, 0, 0, 0, 0, 0, 0, 125, 0, 0, 0, 0, 0, 0],
     
     spriteKey: 'spora',
     animKey: 'spora-move',
     scale: 4.5,
     
-    expValue: 50,
-    spawnWeight: 0,
-    unlockDifficulty: 9,
+    // Boss在特定难度出现
+    spawnDensity: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     isBoss: true
   },
   
@@ -202,17 +204,18 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     type: EnemyType.SPOOKMOTH,
     name: 'Spookmoth Boss',
     
-    baseHP: 180,
-    baseDamage: 65,
-    baseSpeed: 85,
+    // 难度1-15的属性值（难度12出现）
+    hp: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 240, 0, 0, 0],
+    damage: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0],
+    speed: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0],
+    expValue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     
     spriteKey: 'spookmoth',
     animKey: 'spookmoth-fly',
     scale: 5.0,
     
-    expValue: 75,
-    spawnWeight: 0,
-    unlockDifficulty: 12,
+    // Boss在特定难度出现
+    spawnDensity: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     isBoss: true
   },
   
@@ -251,8 +254,12 @@ export const SPAWN_CONFIG: EnemySpawnConfig = {
 
 // 根据难度获取可生成的敌人配置（不含Boss）
 export function getAvailableEnemies(difficultyLevel: number): EnemyConfig[] {
+  const index = difficultyLevel - 1; // 数组索引从0开始，难度从1开始
   return ENEMY_CONFIGS.filter(enemy => 
-    enemy.unlockDifficulty <= difficultyLevel && !enemy.isBoss
+    !enemy.isBoss && 
+    index >= 0 && 
+    index < enemy.spawnDensity.length && 
+    enemy.spawnDensity[index] > 0
   );
 }
 
@@ -263,15 +270,20 @@ export function getAvailableBoss(difficultyLevel: number): EnemyConfig | null {
     return null;
   }
   
-  // 找到该难度等级对应的Boss
+  const index = difficultyLevel - 1; // 数组索引从0开始
+  
+  // 找到该难度等级对应的Boss（hp值大于0表示该难度可以出现）
   const bosses = ENEMY_CONFIGS.filter(enemy => 
-    enemy.isBoss && enemy.unlockDifficulty === difficultyLevel
+    enemy.isBoss && 
+    index >= 0 && 
+    index < enemy.hp.length && 
+    enemy.hp[index] > 0
   );
   
   return bosses.length > 0 ? bosses[0] : null;
 }
 
-// 根据权重随机选择敌人
+// 根据密度权重随机选择敌人
 export function getRandomEnemy(difficultyLevel: number): EnemyConfig | null {
   const availableEnemies = getAvailableEnemies(difficultyLevel);
   
@@ -279,14 +291,24 @@ export function getRandomEnemy(difficultyLevel: number): EnemyConfig | null {
     return null;
   }
   
-  // 计算总权重
-  const totalWeight = availableEnemies.reduce((sum, enemy) => sum + enemy.spawnWeight, 0);
+  const index = difficultyLevel - 1; // 数组索引从0开始
+  
+  // 计算总密度权重
+  const totalWeight = availableEnemies.reduce((sum, enemy) => {
+    const density = enemy.spawnDensity[index] || 0;
+    return sum + density;
+  }, 0);
+  
+  if (totalWeight === 0) {
+    return availableEnemies[0];
+  }
   
   // 随机选择
   let random = Math.random() * totalWeight;
   
   for (const enemy of availableEnemies) {
-    random -= enemy.spawnWeight;
+    const density = enemy.spawnDensity[index] || 0;
+    random -= density;
     if (random <= 0) {
       return enemy;
     }
@@ -296,7 +318,7 @@ export function getRandomEnemy(difficultyLevel: number): EnemyConfig | null {
   return availableEnemies[0];
 }
 
-// 根据难度计算敌人属性
+// 根据难度获取敌人属性（直接从数组读取）
 export function calculateEnemyStats(
   config: EnemyConfig,
   difficultyLevel: number
@@ -304,13 +326,25 @@ export function calculateEnemyStats(
   hp: number;
   damage: number;
   speed: number;
+  expValue: number;
 } {
-  const difficultyMultiplier = difficultyLevel - 1; // 难度1不增加
+  const index = difficultyLevel - 1; // 数组索引从0开始，难度从1开始
+  
+  // 确保索引有效
+  if (index < 0 || index >= config.hp.length) {
+    return {
+      hp: config.hp[0] || 1,
+      damage: config.damage[0] || 1,
+      speed: config.speed[0] || 50,
+      expValue: config.expValue[0] || 1
+    };
+  }
   
   return {
-    hp: Math.floor(config.baseHP + difficultyMultiplier * SPAWN_CONFIG.difficultyHPScale * config.baseHP),
-    damage: config.baseDamage,
-    speed: Math.floor(config.baseSpeed + difficultyMultiplier * SPAWN_CONFIG.difficultySpeedScale)
+    hp: config.hp[index],
+    damage: config.damage[index],
+    speed: config.speed[index],
+    expValue: config.expValue[index]
   };
 }
 
