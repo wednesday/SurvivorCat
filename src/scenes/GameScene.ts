@@ -951,12 +951,13 @@ export class GameScene extends Phaser.Scene {
         );
 
         // 创建激光束（长矩形）
-        const laserLength = 800;
+        const laserLength = 400; // 减小激光长度
+        const laserWidth = 4; // 减小激光宽度
         const laser = this.add.rectangle(
           this.player.x,
           this.player.y,
           laserLength,
-          6,
+          laserWidth,
           0x00ffff
         );
         laser.setRotation(angle);
@@ -966,9 +967,12 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.existing(laser);
         const body = laser.body as Phaser.Physics.Arcade.Body;
         if (body) {
-          body.setSize(laserLength, 6);
+          body.setSize(laserLength, laserWidth);
         }
 
+        // 标记激光已击中的敌人，避免同一激光对同一敌人多次伤害
+        (laser as any).hitEnemies = new Set<number>();
+        
         this.lasers.push(laser);
 
         // 激光效果：从细变粗再变细
@@ -1090,7 +1094,7 @@ export class GameScene extends Phaser.Scene {
         
         // 为Boss生成一件随机装备并附带词条（保存到宝箱上）
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
-        const quality = rollEquipmentQuality();
+        const quality = rollEquipmentQuality(this.gameDifficulty);
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
         this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
@@ -1154,7 +1158,7 @@ export class GameScene extends Phaser.Scene {
         this.bossesDefeated++;
         
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
-        const quality = rollEquipmentQuality();
+        const quality = rollEquipmentQuality(this.gameDifficulty);
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
         this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
@@ -1186,15 +1190,24 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  hitEnemyWithLaser(enemy: any) {
+  hitEnemyWithLaser(enemy: any, laser?: any) {
     if (!enemy || !enemy.active) return;
 
-    // 检查是否已经被这一帧的激光击中过（避免重复伤害）
+    // 如果提供了激光对象，检查该激光是否已经击中过这个敌人
+    if (laser && (laser as any).hitEnemies) {
+      const enemyId = enemy.getData ? enemy.getData('id') || enemy.name : enemy.name;
+      if ((laser as any).hitEnemies.has(enemyId)) {
+        return; // 该激光已经击中过这个敌人，跳过
+      }
+      (laser as any).hitEnemies.add(enemyId);
+    }
+
+    // 检查是否已经被激光击中过（全局冷却，避免重复伤害）
     if (enemy.laserHitThisFrame) return;
     enemy.laserHitThisFrame = true;
 
-    // 下一帧重置
-    this.time.delayedCall(50, () => {
+    // 冷却时间增加到200ms
+    this.time.delayedCall(200, () => {
       if (enemy.active) {
         enemy.laserHitThisFrame = false;
       }
@@ -1230,7 +1243,7 @@ export class GameScene extends Phaser.Scene {
         this.bossesDefeated++;
         
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
-        const quality = rollEquipmentQuality();
+        const quality = rollEquipmentQuality(this.gameDifficulty);
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
         this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
@@ -2160,7 +2173,7 @@ export class GameScene extends Phaser.Scene {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
-        const quality = rollEquipmentQuality();
+        const quality = rollEquipmentQuality(this.gameDifficulty);
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
         this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
         // Boss掉落更多金币
@@ -2938,11 +2951,25 @@ export class GameScene extends Phaser.Scene {
       bagHint.setDepth(5002);
     }
 
-    this.input.keyboard!.once("keydown-R", () => {
+    // 使用键盘对象监听按键，确保在场景暂停时也能响应
+    const rKey = this.input.keyboard!.addKey('R');
+    const mKey = this.input.keyboard!.addKey('M');
+    
+    rKey.once('down', () => {
+      // 清理按键监听
+      rKey.destroy();
+      mKey.destroy();
+      // 恢复场景并重启
+      this.scene.resume();
       this.scene.restart();
     });
 
-    this.input.keyboard!.once("keydown-M", () => {
+    mKey.once('down', () => {
+      // 清理按键监听
+      rKey.destroy();
+      mKey.destroy();
+      // 停止当前场景并切换到菜单
+      this.scene.stop();
       this.scene.start("MenuScene");
     });
   }
@@ -3080,11 +3107,25 @@ export class GameScene extends Phaser.Scene {
     menuText.setOrigin(0.5);
     menuText.setScrollFactor(0);
 
-    this.input.keyboard!.once("keydown-R", () => {
+    // 使用键盘对象监听按键，确保在场景暂停时也能响应
+    const rKey = this.input.keyboard!.addKey('R');
+    const mKey = this.input.keyboard!.addKey('M');
+    
+    rKey.once('down', () => {
+      // 清理按键监听
+      rKey.destroy();
+      mKey.destroy();
+      // 恢复场景并重启
+      this.scene.resume();
       this.scene.restart();
     });
 
-    this.input.keyboard!.once("keydown-M", () => {
+    mKey.once('down', () => {
+      // 清理按键监听
+      rKey.destroy();
+      mKey.destroy();
+      // 停止当前场景并切换到菜单
+      this.scene.stop();
       this.scene.start("MenuScene");
     });
   }
@@ -3228,10 +3269,29 @@ export class GameScene extends Phaser.Scene {
       this.enemies.children.entries.forEach((enemy) => {
         if (!enemy || !enemy.active) return;
 
-        const bounds1 = laser.getBounds();
-        const bounds2 = (enemy as any).getBounds();
-        if (Phaser.Geom.Intersects.RectangleToRectangle(bounds1, bounds2)) {
-          this.hitEnemyWithLaser(enemy);
+        // 使用更精确的线段-圆形碰撞检测
+        // 计算激光的起点和终点
+        const angle = laser.rotation;
+        const laserStartX = laser.x;
+        const laserStartY = laser.y;
+        const laserEndX = laser.x + Math.cos(angle) * 400; // laserLength
+        const laserEndY = laser.y + Math.sin(angle) * 400;
+        
+        // 敌人位置
+        const enemyX = (enemy as any).x;
+        const enemyY = (enemy as any).y;
+        const enemyRadius = 20; // 敌人碰撞半径
+        
+        // 计算点到线段的距离
+        const distance = this.pointToLineSegmentDistance(
+          enemyX, enemyY,
+          laserStartX, laserStartY,
+          laserEndX, laserEndY
+        );
+        
+        // 如果距离小于敌人半径 + 激光宽度的一半，则视为击中
+        if (distance < enemyRadius + 2) { // 2 是激光宽度的一半
+          this.hitEnemyWithLaser(enemy, laser);
         }
       });
     });
@@ -3433,5 +3493,32 @@ export class GameScene extends Phaser.Scene {
 
     // 屏幕震动效果
     this.cameras.main.shake(200, 0.01);
+  }
+  
+  // 计算点到线段的最短距离
+  pointToLineSegmentDistance(
+    px: number, py: number,
+    x1: number, y1: number,
+    x2: number, y2: number
+  ): number {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSquared = dx * dx + dy * dy;
+    
+    if (lengthSquared === 0) {
+      // 线段退化为一个点
+      return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+    }
+    
+    // 计算投影参数 t
+    let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
+    t = Math.max(0, Math.min(1, t));
+    
+    // 计算投影点
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    
+    // 返回距离
+    return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
   }
 }

@@ -178,36 +178,113 @@ export class EnemyManager {
   // 计算生成位置
   private calculateSpawnPosition(): { x: number; y: number } {
     const playerSprite = this.player as any;
-    const edge = Phaser.Math.Between(0, 3);
-    let x: number, y: number;
+    const spawnDistance = 600; // 生成距离（屏幕外）
+    const minSpawnDistance = 500; // 最小生成距离
     
-    const padding = 100;
-    
-    switch (edge) {
-      case 0: // 上
-        x = Phaser.Math.Between(playerSprite.x - 800, playerSprite.x + 800);
-        y = playerSprite.y - 400 - padding;
-        break;
-      case 1: // 右
-        x = playerSprite.x + 640 + padding;
-        y = Phaser.Math.Between(playerSprite.y - 400, playerSprite.y + 400);
-        break;
-      case 2: // 下
-        x = Phaser.Math.Between(playerSprite.x - 800, playerSprite.x + 800);
-        y = playerSprite.y + 400 + padding;
-        break;
-      default: // 左
-        x = playerSprite.x - 640 - padding;
-        y = Phaser.Math.Between(playerSprite.y - 400, playerSprite.y + 400);
-        break;
-    }
-    
-    // 确保在地图范围内
+    // 地图边界
     const halfWidth = this.mapWidth / 2;
     const halfHeight = this.mapHeight / 2;
+    const mapBounds = {
+      minX: -halfWidth + 100,
+      maxX: halfWidth - 100,
+      minY: -halfHeight + 100,
+      maxY: halfHeight - 100
+    };
     
-    x = Phaser.Math.Clamp(x, -halfWidth + 50, halfWidth - 50);
-    y = Phaser.Math.Clamp(y, -halfHeight + 50, halfHeight - 50);
+    // 随机选择一个角度（360度）
+    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    
+    // 在该角度方向上，从玩家位置向外扩展生成
+    let x = playerSprite.x + Math.cos(angle) * spawnDistance;
+    let y = playerSprite.y + Math.sin(angle) * spawnDistance;
+    
+    // 如果超出地图边界，将位置拉回到地图边界
+    const needsClamp = x < mapBounds.minX || x > mapBounds.maxX || 
+                       y < mapBounds.minY || y > mapBounds.maxY;
+    
+    if (needsClamp) {
+      // 计算从玩家到目标点的射线与地图边界的交点
+      const dx = x - playerSprite.x;
+      const dy = y - playerSprite.y;
+      
+      // 计算射线与各边界的交点参数 t (0到1之间)
+      const tValues: number[] = [];
+      
+      // 左边界
+      if (dx !== 0) {
+        const t = (mapBounds.minX - playerSprite.x) / dx;
+        if (t > 0 && t <= 1) {
+          const intersectY = playerSprite.y + t * dy;
+          if (intersectY >= mapBounds.minY && intersectY <= mapBounds.maxY) {
+            tValues.push(t);
+          }
+        }
+      }
+      
+      // 右边界
+      if (dx !== 0) {
+        const t = (mapBounds.maxX - playerSprite.x) / dx;
+        if (t > 0 && t <= 1) {
+          const intersectY = playerSprite.y + t * dy;
+          if (intersectY >= mapBounds.minY && intersectY <= mapBounds.maxY) {
+            tValues.push(t);
+          }
+        }
+      }
+      
+      // 上边界
+      if (dy !== 0) {
+        const t = (mapBounds.minY - playerSprite.y) / dy;
+        if (t > 0 && t <= 1) {
+          const intersectX = playerSprite.x + t * dx;
+          if (intersectX >= mapBounds.minX && intersectX <= mapBounds.maxX) {
+            tValues.push(t);
+          }
+        }
+      }
+      
+      // 下边界
+      if (dy !== 0) {
+        const t = (mapBounds.maxY - playerSprite.y) / dy;
+        if (t > 0 && t <= 1) {
+          const intersectX = playerSprite.x + t * dx;
+          if (intersectX >= mapBounds.minX && intersectX <= mapBounds.maxX) {
+            tValues.push(t);
+          }
+        }
+      }
+      
+      // 如果找到交点，使用最近的交点
+      if (tValues.length > 0) {
+        const t = Math.min(...tValues);
+        x = playerSprite.x + t * dx;
+        y = playerSprite.y + t * dy;
+        
+        // 轻微向内偏移，确保在边界内
+        const offset = 10;
+        if (x <= mapBounds.minX + offset) x = mapBounds.minX + offset;
+        if (x >= mapBounds.maxX - offset) x = mapBounds.maxX - offset;
+        if (y <= mapBounds.minY + offset) y = mapBounds.minY + offset;
+        if (y >= mapBounds.maxY - offset) y = mapBounds.maxY - offset;
+      } else {
+        // 降级方案：简单clamp
+        x = Phaser.Math.Clamp(x, mapBounds.minX, mapBounds.maxX);
+        y = Phaser.Math.Clamp(y, mapBounds.minY, mapBounds.maxY);
+      }
+      
+      // 验证最终距离，确保不会太近
+      const finalDistance = Phaser.Math.Distance.Between(x, y, playerSprite.x, playerSprite.y);
+      if (finalDistance < minSpawnDistance) {
+        // 如果太近，在当前方向上推到最小距离
+        const pushAngle = Math.atan2(y - playerSprite.y, x - playerSprite.x);
+        x = playerSprite.x + Math.cos(pushAngle) * minSpawnDistance;
+        y = playerSprite.y + Math.sin(pushAngle) * minSpawnDistance;
+        
+        // 最后确保在边界内
+        x = Phaser.Math.Clamp(x, mapBounds.minX, mapBounds.maxX);
+        y = Phaser.Math.Clamp(y, mapBounds.minY, mapBounds.maxY);
+      }
+    }
     
     return { x, y };
   }

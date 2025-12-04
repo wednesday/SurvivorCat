@@ -24,6 +24,7 @@ export interface DifficultySettings {
   expMultiplier: number;      // 经验倍率
   coinMultiplier: number;     // 金币倍率
   description: string;
+  rarityDropRateMultiplier: number; // 稀有掉落率倍率 0~10
 }
 
 export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
@@ -39,7 +40,8 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     bossDamageMultiplier: 0.7,
     expMultiplier: 0.8,
     coinMultiplier: 0.8,
-    description: '适合新手玩家，敌人较弱'
+    description: '适合新手玩家，敌人较弱',
+    rarityDropRateMultiplier: 0.8,
   },
   [DifficultyLevel.NORMAL]: {
     level: DifficultyLevel.NORMAL,
@@ -53,7 +55,8 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     bossDamageMultiplier: 1.0,
     expMultiplier: 1.0,
     coinMultiplier: 1.0,
-    description: '标准难度，平衡的游戏体验'
+    description: '标准难度，平衡的游戏体验',
+    rarityDropRateMultiplier: 1,
   },
   [DifficultyLevel.HARD]: {
     level: DifficultyLevel.HARD,
@@ -61,13 +64,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#00FF00',  // 绿色
     enemyHealthMultiplier: 1.5,
     enemyDamageMultiplier: 1.3,
-    enemySpeedMultiplier: 1.2,
+    enemySpeedMultiplier: 1.1,
     enemySpawnRateMultiplier: 1.3,
     bossHealthMultiplier: 1.5,
     bossDamageMultiplier: 1.3,
     expMultiplier: 1.3,
     coinMultiplier: 1.3,
-    description: '挑战性增强，敌人更强大'
+    description: '挑战性增强，敌人更强大',
+    rarityDropRateMultiplier: 1.4,
   },
   [DifficultyLevel.NIGHTMARE_1]: {
     level: DifficultyLevel.NIGHTMARE_1,
@@ -75,13 +79,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#9C27B0',  // 紫色
     enemyHealthMultiplier: 2.0,
     enemyDamageMultiplier: 1.6,
-    enemySpeedMultiplier: 1.4,
+    enemySpeedMultiplier: 1.15,
     enemySpawnRateMultiplier: 1.6,
     bossHealthMultiplier: 2.0,
     bossDamageMultiplier: 1.6,
     expMultiplier: 1.6,
     coinMultiplier: 1.6,
-    description: '噩梦难度第一阶段，极具挑战性'
+    description: '噩梦难度第一阶段，极具挑战性',
+    rarityDropRateMultiplier: 1.8,
   },
   [DifficultyLevel.NIGHTMARE_2]: {
     level: DifficultyLevel.NIGHTMARE_2,
@@ -89,13 +94,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#7B1FA2',  // 深紫色
     enemyHealthMultiplier: 2.5,
     enemyDamageMultiplier: 2.0,
-    enemySpeedMultiplier: 1.6,
+    enemySpeedMultiplier: 1.2,
     enemySpawnRateMultiplier: 2.0,
     bossHealthMultiplier: 2.5,
     bossDamageMultiplier: 2.0,
     expMultiplier: 2.0,
     coinMultiplier: 2.0,
-    description: '噩梦难度第二阶段，恐怖的挑战'
+    description: '噩梦难度第二阶段，恐怖的挑战',
+    rarityDropRateMultiplier: 2.2,
   },
   [DifficultyLevel.NIGHTMARE_3]: {
     level: DifficultyLevel.NIGHTMARE_3,
@@ -103,13 +109,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#6A1B9A',  // 更深紫色
     enemyHealthMultiplier: 3.0,
     enemyDamageMultiplier: 2.5,
-    enemySpeedMultiplier: 1.8,
+    enemySpeedMultiplier: 1.25,
     enemySpawnRateMultiplier: 2.5,
     bossHealthMultiplier: 3.0,
     bossDamageMultiplier: 2.5,
     expMultiplier: 2.5,
     coinMultiplier: 2.5,
-    description: '噩梦难度第三阶段，几乎不可能'
+    description: '噩梦难度第三阶段，几乎不可能',
+    rarityDropRateMultiplier: 2.6,
   },
   [DifficultyLevel.INFERNO_1]: {
     level: DifficultyLevel.INFERNO_1,
@@ -117,13 +124,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#FF9800',  // 橙色
     enemyHealthMultiplier: 4.0,
     enemyDamageMultiplier: 3.0,
-    enemySpeedMultiplier: 2.0,
+    enemySpeedMultiplier: 1.3,
     enemySpawnRateMultiplier: 3.0,
     bossHealthMultiplier: 4.0,
     bossDamageMultiplier: 3.0,
     expMultiplier: 3.0,
     coinMultiplier: 3.0,
-    description: '炼狱难度第一阶段，只有最强者能生存'
+    description: '炼狱难度第一阶段，只有最强者能生存',
+    rarityDropRateMultiplier: 3.0,
   },
   [DifficultyLevel.INFERNO_2]: {
     level: DifficultyLevel.INFERNO_2,
@@ -131,13 +139,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#F57C00',  // 深橙色
     enemyHealthMultiplier: 5.0,
     enemyDamageMultiplier: 3.5,
-    enemySpeedMultiplier: 2.2,
+    enemySpeedMultiplier: 1.35,
     enemySpawnRateMultiplier: 3.5,
     bossHealthMultiplier: 5.0,
     bossDamageMultiplier: 3.5,
     expMultiplier: 3.5,
     coinMultiplier: 3.5,
-    description: '炼狱难度第二阶段，地狱般的考验'
+    description: '炼狱难度第二阶段，地狱般的考验',
+    rarityDropRateMultiplier: 4.0,
   },
   [DifficultyLevel.INFERNO_3]: {
     level: DifficultyLevel.INFERNO_3,
@@ -145,13 +154,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultySettings> = {
     color: '#E65100',  // 更深橙色
     enemyHealthMultiplier: 6.0,
     enemyDamageMultiplier: 4.0,
-    enemySpeedMultiplier: 2.5,
+    enemySpeedMultiplier: 1.4,
     enemySpawnRateMultiplier: 4.0,
     bossHealthMultiplier: 6.0,
     bossDamageMultiplier: 4.0,
     expMultiplier: 4.0,
     coinMultiplier: 4.0,
-    description: '炼狱难度第三阶段，终极挑战'
+    description: '炼狱难度第三阶段，终极挑战',
+    rarityDropRateMultiplier: 5.0,
   }
 };
 
