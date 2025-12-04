@@ -99,6 +99,29 @@ export class SaveManager {
   // 保存存档
   static saveSave(saveData: PlayerSaveData): boolean {
     try {
+      // 加载当前存档，合并关键字段以防止被覆盖
+      const currentSave = this.loadSave();
+      
+      // 合并解锁难度列表（取并集）
+      if (currentSave.unlockedDifficulties && saveData.unlockedDifficulties) {
+        const mergedDifficulties = new Set([
+          ...currentSave.unlockedDifficulties,
+          ...saveData.unlockedDifficulties
+        ]);
+        saveData.unlockedDifficulties = Array.from(mergedDifficulties);
+      }
+      
+      // 保留更高的完成难度
+      if (currentSave.highestCompletedDifficulty !== undefined && 
+          saveData.highestCompletedDifficulty !== undefined) {
+        saveData.highestCompletedDifficulty = Math.max(
+          currentSave.highestCompletedDifficulty,
+          saveData.highestCompletedDifficulty
+        );
+      } else if (currentSave.highestCompletedDifficulty !== undefined) {
+        saveData.highestCompletedDifficulty = currentSave.highestCompletedDifficulty;
+      }
+      
       saveData.lastPlayed = new Date().toISOString();
       localStorage.setItem(this.SAVE_KEY, JSON.stringify(saveData));
       return true;
@@ -219,7 +242,6 @@ export class SaveManager {
     if (!save.highestCompletedDifficulty || difficulty > save.highestCompletedDifficulty) {
       save.highestCompletedDifficulty = difficulty;
     }
-    
     // 解锁下一个难度
     const nextDifficulty = difficulty + 1;
     if (nextDifficulty <= DifficultyLevel.INFERNO_3) {

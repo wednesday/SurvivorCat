@@ -113,6 +113,14 @@ export class MenuScene extends Phaser.Scene {
       frameWidth: 16,
       frameHeight: 16
     });
+    
+    // 预加载音效
+    this.load.audio('CrossbowShoot6', 'assets/audio/CrossbowShoot6.wav');
+    this.load.audio('culverinshoot1', 'assets/audio/culverinshoot1.wav');
+    this.load.audio('laserShot', 'assets/audio/laserShot.mp3');
+    
+    // 预加载背景音乐
+    this.load.audio('bgm', 'assets/audio/n48.mp3');
   }
   
   create() {
@@ -121,6 +129,12 @@ export class MenuScene extends Phaser.Scene {
     
     // 加载当前难度
     this.currentDifficulty = SaveManager.getDifficulty();
+    
+    // 播放背景音乐
+    if (!this.sound.get('bgm')) {
+      const music = this.sound.add('bgm', { loop: true, volume: 0.5 });
+      music.play();
+    }
     
     // 创建背景效果
     this.createBackground();
@@ -460,7 +474,7 @@ export class MenuScene extends Phaser.Scene {
     // 获取已解锁的难度
     const unlockedDifficulties = SaveManager.getUnlockedDifficulties();
     const allDifficulties = getAllDifficulties();
-    
+    console.log(unlockedDifficulties)
     // 添加选项
     allDifficulties.forEach(diff => {
       const option = document.createElement('option');

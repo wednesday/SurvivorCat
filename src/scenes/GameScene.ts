@@ -206,7 +206,7 @@ export class GameScene extends Phaser.Scene {
     this.playerHP = this.skillManager.stats.maxHP;
     this.playerLevel = 1;
     this.exp = 0;
-    this.expToNextLevel = 10;
+    this.expToNextLevel = 8;
     this.killCount = 0;
     this.coinsCollected = 0;
     this.bossesDefeated = 0;
@@ -840,6 +840,9 @@ export class GameScene extends Phaser.Scene {
       targets.push(enemyList[i]);
     }
 
+    // 播放发射音效（所有子弹一起发射，只播放一次）
+    this.sound.play('CrossbowShoot6');
+
     // 向每个目标发射子弹
     targets.forEach((target: any) => {
       // 创建抛射物（使用第4行子弹，帧15-19）
@@ -849,7 +852,6 @@ export class GameScene extends Phaser.Scene {
         'bullet-sheet',
         20 // 第4行第1帧 (行索引从0开始，所以第4行=3*5=15)
       );
-      
       // 播放子弹动画（第4行的5帧）
       const bulletAnimKey = 'bullet-type4-anim';
       if (!this.anims.exists(bulletAnimKey)) {
@@ -901,6 +903,9 @@ export class GameScene extends Phaser.Scene {
   shootLaser() {
     if (this.skillManager.stats.laserCount <= 0) return;
     if (this.enemies.getChildren().length === 0) return;
+
+    // 播放激光音效
+    this.sound.play('laserShot');
 
     // 找到最近的敌人作为激光方向
     const enemyList = this.enemies.getChildren().slice();
@@ -1272,8 +1277,9 @@ export class GameScene extends Phaser.Scene {
     }
     (enemy as any)._playerHitCooldown = true;
     
-    // 对玩家造成伤害并更新 UI
-    this.playerHP -= 10;
+    // 对玩家造成伤害并更新 UI（使用怪物的实际伤害值）
+    const enemyDamage = (enemy as any).damage || 10;
+    this.playerHP -= enemyDamage;
     this.hpText.setText(`HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`);
 
     // 对敌人施加向外击退 - 直接改变位置而不是速度
@@ -1380,6 +1386,9 @@ export class GameScene extends Phaser.Scene {
     const bossX = boss.x;
     const bossY = boss.y;
     
+    // 获取Boss的实际伤害值
+    const bossDamage = (boss as any).damage || 10;
+    
     // 计算朝向玩家的角度
     const angleToPlayer = Phaser.Math.Angle.Between(
       bossX, bossY,
@@ -1389,7 +1398,7 @@ export class GameScene extends Phaser.Scene {
     switch(bossType) {
       case 'bugbit':
         // BugBit: 单发子弹
-        this.createBossProjectile(bossX, bossY, angleToPlayer, 5, 300);
+        this.createBossProjectile(bossX, bossY, angleToPlayer, bossDamage * 0.5, 300);
         break;
         
       case 'pebblin':
@@ -1397,7 +1406,7 @@ export class GameScene extends Phaser.Scene {
         const spreadAngle = Math.PI / 6; // 30度
         for (let i = -1; i <= 1; i++) {
           const angle = angleToPlayer + i * spreadAngle / 2;
-          this.createBossProjectile(bossX, bossY, angle, 8, 250);
+          this.createBossProjectile(bossX, bossY, angle, bossDamage * 0.8, 250);
         }
         break;
         
@@ -1405,7 +1414,7 @@ export class GameScene extends Phaser.Scene {
         // Spora: 12发子弹（圆形发散）
         for (let i = 0; i < 12; i++) {
           const angle = (Math.PI * 2 / 12) * i;
-          this.createBossProjectile(bossX, bossY, angle, 10, 200);
+          this.createBossProjectile(bossX, bossY, angle, bossDamage, 200);
         }
         break;
         
@@ -1413,7 +1422,7 @@ export class GameScene extends Phaser.Scene {
         // Spookmoth: 8发弧形子弹
         for (let i = 0; i < 8; i++) {
           const angle = angleToPlayer + (i - 3.5) * (Math.PI / 8);
-          this.createBossProjectile(bossX, bossY, angle, 10, 220, true);
+          this.createBossProjectile(bossX, bossY, angle, bossDamage, 220, true);
         }
         break;
     }
@@ -2170,6 +2179,12 @@ export class GameScene extends Phaser.Scene {
         // Boss掉落更多金币
         this.spawnCoin(enemy.x + 20, enemy.y, 10);
         this.spawnCoin(enemy.x - 20, enemy.y, 10);
+        // 标记为已击败Boss并检查通关条件（与其他伤害分支保持一致）
+        this.bossesDefeated++;
+        if (this.bossesDefeated >= 4) {
+          this.gameVictory();
+          return;
+        }
       } else if (!isBoss) {
         this.spawnExpOrb(enemy.x, enemy.y, expValue);
 
@@ -2727,6 +2742,28 @@ export class GameScene extends Phaser.Scene {
     fullBg.setScrollFactor(0);
     fullBg.setDepth(5000);
 
+    // 确保输入仍然启用（某些情况下场景会通过 isPaused 阻断 update，但我们需要保留 pointer 事件）
+    try {
+      if (this.input && (this.input as any).enabled === false) {
+        this.input.enabled = true;
+      }
+      // 允许事件传播到层级更低的可交互对象
+      this.input.setTopOnly(false);
+      try { (this.input as any).manager.globalTopOnly = false; } catch (e) {}
+
+      // 添加调试监听，记录任何 pointerdown 与 gameobjectdown 事件，便于定位点击被拦截的位置
+      this.input.on('pointerdown', (pointer: any) => {
+        try { console.log('[gameVictory] pointerdown:', { x: pointer.x, y: pointer.y }); } catch (e) {}
+      });
+      this.input.on('gameobjectdown', (pointer: any, gameObject: any) => {
+        try {
+          console.log('[gameVictory] gameobjectdown ->', { type: gameObject.type || gameObject.texture?.key || gameObject.name || 'unknown', depth: (gameObject as any).depth });
+        } catch (e) {}
+      });
+    } catch (e) {
+      console.warn('[gameVictory] input enable failed', e);
+    }
+
     // 左侧面板 - 胜利信息
     const leftPanel = this.add.rectangle(
       centerX - 300,
@@ -2852,6 +2889,27 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    // 将已解锁的下一个难度设置为当前选中难度（保存并同步 UI）
+    try {
+      if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
+        SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
+        this.gameDifficulty = nextDifficulty as DifficultyLevel;
+        // 更新难度显示颜色与文本
+        try {
+          const diffName = getDifficultyName(this.gameDifficulty);
+          const diffColor = getDifficultyColor(this.gameDifficulty);
+          if (this.diffText) {
+            this.diffText.setText(`游戏难度: ${diffName} | 波数: ${this.difficultyLevel}`);
+            this.diffText.setStyle({ color: diffColor as any });
+          }
+        } catch (e) {
+          // ignore UI update failures
+        }
+      }
+    } catch (e) {
+      console.warn('[gameVictory] Failed to persist selected difficulty', e);
+    }
+
     // 创建重启按钮
     const restartButton = this.add.rectangle(
       centerX - 300,
@@ -2862,14 +2920,13 @@ export class GameScene extends Phaser.Scene {
     );
     restartButton.setStrokeStyle(3, 0x00ff00);
     restartButton.setScrollFactor(0);
-    restartButton.setDepth(10000);
+    restartButton.setDepth(11000);
     restartButton.setInteractive({ useHandCursor: true });
-    this.input.setTopOnly(false);
 
     const restartText = this.add.text(
       centerX - 300,
       centerY + 230,
-      "重新开始",
+      "下一难度",
       {
         fontSize: "24px",
         color: "#ffffff",
@@ -2879,8 +2936,9 @@ export class GameScene extends Phaser.Scene {
     );
     restartText.setOrigin(0.5);
     restartText.setScrollFactor(0);
-    restartText.setDepth(10001);
-    restartText.setInteractive(false);
+    restartText.setDepth(11001);
+    // 使文字本身也可点击（有时点击文字区域不会被按钮接收）
+    restartText.setInteractive({ useHandCursor: true });
 
     // 创建菜单按钮
     const menuButton = this.add.rectangle(
@@ -2892,7 +2950,7 @@ export class GameScene extends Phaser.Scene {
     );
     menuButton.setStrokeStyle(3, 0xffff00);
     menuButton.setScrollFactor(0);
-    menuButton.setDepth(10000);
+    menuButton.setDepth(11000);
     menuButton.setInteractive({ useHandCursor: true });
 
     const menuText = this.add.text(
@@ -2908,8 +2966,8 @@ export class GameScene extends Phaser.Scene {
     );
     menuText.setOrigin(0.5);
     menuText.setScrollFactor(0);
-    menuText.setDepth(10001);
-    menuText.setInteractive(false);
+    menuText.setDepth(11001);
+    menuText.setInteractive({ useHandCursor: true });
 
     // 按钮悬停效果
     restartButton.on('pointerover', () => {
@@ -2936,15 +2994,55 @@ export class GameScene extends Phaser.Scene {
       menuText.setScale(1);
     });
 
-    // 按钮点击事件
-    restartButton.on('pointerdown', () => {
-      console.log('胜利界面-重新开始按钮被点击');
+    // 按钮点击事件 -> 切换到下一个难度并重启场景
+    const onNextDifficultyClicked = (pointer?: any, localX?: any, localY?: any, event?: any) => {
+      console.log('胜利界面-下一难度按钮被点击');
+
+      // 确保输入与交互处于启用状态
+      try {
+        if (this.input) {
+          (this.input as any).enabled = true;
+          // 关闭 global/topOnly 限制，允许我们处理 UI 事件
+          try {
+            if ((this.input as any).manager) {
+              (this.input as any).manager.globalTopOnly = false;
+            }
+          } catch (e) {
+            // ignore
+          }
+          this.input.setTopOnly(false);
+        }
+      } catch (e) {
+        console.warn('[gameVictory] enable input failed', e);
+      }
+
+      // 计算下一个难度并保存
+      const nextDifficulty = this.gameDifficulty + 1;
+      if (nextDifficulty <= DifficultyLevel.INFERNO_3) {
+        try {
+          SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
+        } catch (e) {
+          console.warn('[gameVictory] Failed to set next difficulty', e);
+        }
+      }
+
+      // 重置场景状态并重启（create() 会从 SaveManager 读取新的难度）
+      this.isPaused = false;
+      try { this.physics.resume(); } catch (e) {}
       this.cleanupScene();
       this.scene.restart();
-    });
+    };
+
+    restartButton.on('pointerdown', onNextDifficultyClicked);
+    restartText.on('pointerdown', onNextDifficultyClicked);
 
     menuButton.on('pointerdown', () => {
       console.log('胜利界面-返回菜单按钮被点击');
+      this.scene.stop();
+      this.scene.start("MenuScene");
+    });
+    menuText.on('pointerdown', () => {
+      console.log('胜利界面-返回菜单(文字) 被点击');
       this.scene.stop();
       this.scene.start("MenuScene");
     });
@@ -3188,10 +3286,10 @@ export class GameScene extends Phaser.Scene {
         // 闪烁效果
         this.tweens.add({
           targets: unlockText,
-          alpha: 0.5,
+          alpha: 0.6,
           duration: 500,
           yoyo: true,
-          repeat: -1
+          repeat: -1,
         });
       }
     }
@@ -3477,7 +3575,7 @@ export class GameScene extends Phaser.Scene {
       );
 
       // 如果敌人距离玩家太远（超过视野外一定距离），重新刷新到视野边缘
-      const despawnDistance = 1000; // 超过这个距离就重新刷新
+      const despawnDistance = 1000; // 超过这个距离就重新生成
       if (distance > despawnDistance) {
         // 在玩家视野边缘随机位置重新生成
         const edge = Phaser.Math.Between(0, 3);

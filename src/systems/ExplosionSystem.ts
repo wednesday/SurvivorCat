@@ -17,6 +17,9 @@ export class ExplosionSystem {
     enemies: Phaser.Physics.Arcade.Group,
     onEnemyHit: (enemy: any, damage: number) => void
   ): void {
+    // 爆炸音效
+    this.scene.sound.play('culverinshoot1');
+    
     // 创建爆炸视觉效果 - 扩散的圆圈
     const explosion = this.scene.add.circle(x, y, 10, 0xff6600, 0.8);
     

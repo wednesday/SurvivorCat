@@ -368,7 +368,7 @@ export class InventoryScene extends Phaser.Scene {
         yOffset += 22;
       }
       if (eff.moveSpeed) {
-        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${Math.round(eff.moveSpeed * 100)}% 移动速度`, {
+        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${eff.moveSpeed} 移动速度`, {
           fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
         }));
         yOffset += 22;
@@ -388,7 +388,7 @@ export class InventoryScene extends Phaser.Scene {
       
       // 攻击属性
       if (eff.attackSpeed) {
-        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${Math.round(eff.attackSpeed * 100)}% 攻击速度`, {
+        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${eff.attackSpeed} 攻击速度`, {
           fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
         }));
         yOffset += 22;
@@ -400,7 +400,7 @@ export class InventoryScene extends Phaser.Scene {
         yOffset += 22;
       }
       if (eff.projectileDamage) {
-        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${Math.round(eff.projectileDamage * 100)}% 子弹伤害`, {
+        panel.add(this.add.text(-panelWidth / 2 + 40, yOffset, `+ ${eff.projectileDamage} 子弹伤害`, {
           fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
         }));
         yOffset += 22;

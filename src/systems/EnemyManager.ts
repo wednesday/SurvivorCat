@@ -306,6 +306,21 @@ export class EnemyManager {
     
     const finalSpeed = stats.speed * diffConfig.enemySpeedMultiplier;
     
+    // 调试日志：每20个怪物打印一次详细信息
+    if (this.enemyGroup.getChildren().length % 20 === 0) {
+      console.log(`[难度系统] 生成怪物: ${config.name}`, {
+        游戏难度: `${diffConfig.name} (${this.gameDifficulty})`,
+        当前波次难度: this.currentDifficulty,
+        基础属性: { HP: stats.hp, 伤害: stats.damage, 速度: stats.speed },
+        倍率: {
+          HP倍率: config.isBoss ? diffConfig.bossHealthMultiplier : diffConfig.enemyHealthMultiplier,
+          伤害倍率: config.isBoss ? diffConfig.bossDamageMultiplier : diffConfig.enemyDamageMultiplier,
+          速度倍率: diffConfig.enemySpeedMultiplier
+        },
+        最终属性: { HP: finalHP, 伤害: finalDamage, 速度: finalSpeed.toFixed(1) }
+      });
+    }
+    
     // 创建精灵
     let enemy: Phaser.GameObjects.Sprite;
     
