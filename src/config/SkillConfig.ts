@@ -276,7 +276,18 @@ export const SKILL_CONFIGS: SkillConfig[] = [
 ];
 
 // 获取随机技能配置（用于升级选择）
-export function getRandomSkills(count: number, currentLevels: Map<string, number>): SkillConfig[] {
+export function getRandomSkills(count: number, currentLevels: Map<string, number>, isFirstUpgrade: boolean = false): SkillConfig[] {
+  // 第一次升级时，强制返回三个初始技能
+  if (isFirstUpgrade) {
+    const firstSkills = [
+      SKILL_CONFIGS.find(s => s.id === 'projectile_count'),
+      SKILL_CONFIGS.find(s => s.id === 'orbital_add'),
+      SKILL_CONFIGS.find(s => s.id === 'laser_add')
+    ].filter(s => s !== undefined) as SkillConfig[];
+    
+    return firstSkills;
+  }
+  
   // 过滤掉已达到最大等级的技能
   const availableSkills = SKILL_CONFIGS.filter(skill => {
     const currentLevel = currentLevels.get(skill.id) || 0;

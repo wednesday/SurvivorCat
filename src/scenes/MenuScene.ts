@@ -121,6 +121,9 @@ export class MenuScene extends Phaser.Scene {
     
     // 预加载背景音乐
     this.load.audio('bgm', 'assets/audio/n48.mp3');
+    this.load.audio('bossBgm', 'assets/audio/illusion-of-deception-cinematic-background-music-for-video-short-430672.mp3');
+    this.load.audio('gameOverBgm', 'assets/audio/relaxing-guitar-loop-v5-245859.mp3');
+    this.load.audio('victoryBgm', 'assets/audio/epic-rise-334778.mp3');
   }
   
   create() {

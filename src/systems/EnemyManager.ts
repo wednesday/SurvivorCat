@@ -86,6 +86,9 @@ export class EnemyManager {
     const position = this.calculateSpawnPosition();
     const boss = this.createEnemy(bossConfig, position.x, position.y);
     
+    // 触发Boss生成事件（用于切换音乐）
+    this.scene.events.emit('bossSpawned', boss);
+    
     // Boss特殊标记和效果
     if (boss) {
       // 添加Boss光环效果

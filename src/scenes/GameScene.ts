@@ -60,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private bonusLevelChain = 0; // 当前连续升级链计数
   private coinsCollected = 0; // 本局收集的金币
   private bossesDefeated = 0; // 击败的Boss数量
+  private rerollsRemaining = 2; // 整局游戏的重抽次数
 
   // 难度提升相关
   private difficultyLevel = 1;
@@ -82,6 +83,14 @@ export class GameScene extends Phaser.Scene {
   private diffText!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
 
+  // 音乐控制
+  private normalBgm!: Phaser.Sound.BaseSound | null;
+  private bossBgm!: Phaser.Sound.BaseSound | null;
+  private gameOverBgm!: Phaser.Sound.BaseSound | null;
+  private victoryBgm!: Phaser.Sound.BaseSound | null;
+  private currentMusic: 'normal' | 'boss' | 'gameOver' | 'victory' = 'normal';
+  private isBossFight = false;
+
   // 暂停相关
   private isPaused = false;
   private pauseOverlay!: Phaser.GameObjects.Rectangle;
@@ -102,6 +111,9 @@ export class GameScene extends Phaser.Scene {
   create() {
     // 加载游戏难度设置
     this.gameDifficulty = SaveManager.getDifficulty();
+    
+    // 初始化音乐
+    this.initMusic();
     
     // 设置物理世界边界
     this.physics.world.setBounds(
@@ -213,6 +225,7 @@ export class GameScene extends Phaser.Scene {
     this.gameTime = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
+    this.rerollsRemaining = 2;
     this.difficultyLevel = 1;
     this.lastDifficultyIncreaseTime = 0;
 
@@ -332,6 +345,11 @@ export class GameScene extends Phaser.Scene {
 
     // 创建 UI
     this.createUI();
+
+    // 监听Boss生成事件
+    this.events.on('bossSpawned', () => {
+      this.switchToBossMusic();
+    });
 
     // 创建史莱姆动画
     this.createSlimeAnimations();
@@ -600,6 +618,172 @@ export class GameScene extends Phaser.Scene {
     this.pauseHintText.setScrollFactor(0);
     this.pauseHintText.setDepth(1001);
     this.pauseHintText.setVisible(false);
+  }
+
+  // 初始化音乐
+  initMusic() {
+    // 获取或创建普通BGM
+    this.normalBgm = this.sound.get('bgm');
+    if (!this.normalBgm) {
+      this.normalBgm = this.sound.add('bgm', { loop: true, volume: 0.5 });
+      this.normalBgm.play();
+    }
+    
+    // 预加载Boss BGM（不播放）
+    this.bossBgm = this.sound.get('bossBgm');
+    if (!this.bossBgm) {
+      this.bossBgm = this.sound.add('bossBgm', { loop: true, volume: 0.5 });
+    }
+    
+    // 预加载失败BGM（不播放）
+    this.gameOverBgm = this.sound.get('gameOverBgm');
+    if (!this.gameOverBgm) {
+      this.gameOverBgm = this.sound.add('gameOverBgm', { loop: true, volume: 0.5 });
+    }
+    
+    // 预加载胜利BGM（不播放）
+    this.victoryBgm = this.sound.get('victoryBgm');
+    if (!this.victoryBgm) {
+      this.victoryBgm = this.sound.add('victoryBgm', { loop: true, volume: 0.5 });
+    }
+    
+    this.currentMusic = 'normal';
+  }
+
+  // 切换到Boss战音乐（带淡入淡出效果）
+  switchToBossMusic() {
+    if (this.currentMusic === 'boss' || !this.normalBgm || !this.bossBgm) return;
+    
+    this.currentMusic = 'boss';
+    this.isBossFight = true;
+    
+    // 淡出普通音乐
+    this.tweens.add({
+      targets: this.normalBgm,
+      volume: 0,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => {
+        if (this.normalBgm) {
+          this.normalBgm.pause();
+        }
+      }
+    });
+    
+    // 淡入Boss音乐
+    if (this.bossBgm) {
+      (this.bossBgm as any).volume = 0;
+      this.bossBgm.play();
+      this.tweens.add({
+        targets: this.bossBgm,
+        volume: 0.5,
+        duration: 1500,
+        ease: 'Power2'
+      });
+    }
+  }
+
+  // 切换回普通音乐（带淡入淡出效果）
+  switchToNormalMusic() {
+    if (this.currentMusic === 'normal' || !this.normalBgm || !this.bossBgm) return;
+    
+    this.currentMusic = 'normal';
+    this.isBossFight = false;
+    
+    // 淡出Boss音乐
+    this.tweens.add({
+      targets: this.bossBgm,
+      volume: 0,
+      duration: 2000,
+      ease: 'Power2',
+      onComplete: () => {
+        if (this.bossBgm) {
+          this.bossBgm.pause();
+        }
+      }
+    });
+    
+    // 淡入普通音乐
+    if (this.normalBgm) {
+      (this.normalBgm as any).volume = 0;
+      this.normalBgm.resume();
+      this.tweens.add({
+        targets: this.normalBgm,
+        volume: 0.5,
+        duration: 2000,
+        ease: 'Power2'
+      });
+    }
+  }
+
+  // 切换到失败音乐（带淡入淡出效果）
+  switchToGameOverMusic() {
+    if (this.currentMusic === 'gameOver' || !this.gameOverBgm) return;
+    
+    this.currentMusic = 'gameOver';
+    
+    // 淡出当前音乐
+    const currentBgm = this.isBossFight ? this.bossBgm : this.normalBgm;
+    if (currentBgm) {
+      this.tweens.add({
+        targets: currentBgm,
+        volume: 0,
+        duration: 1500,
+        ease: 'Power2',
+        onComplete: () => {
+          if (currentBgm) {
+            currentBgm.pause();
+          }
+        }
+      });
+    }
+    
+    // 淡入失败音乐
+    if (this.gameOverBgm) {
+      (this.gameOverBgm as any).volume = 0;
+      this.gameOverBgm.play();
+      this.tweens.add({
+        targets: this.gameOverBgm,
+        volume: 0.5,
+        duration: 1500,
+        ease: 'Power2'
+      });
+    }
+  }
+
+  // 切换到胜利音乐（带淡入淡出效果）
+  switchToVictoryMusic() {
+    if (this.currentMusic === 'victory' || !this.victoryBgm) return;
+    
+    this.currentMusic = 'victory';
+    
+    // 淡出当前音乐
+    const currentBgm = this.isBossFight ? this.bossBgm : this.normalBgm;
+    if (currentBgm) {
+      this.tweens.add({
+        targets: currentBgm,
+        volume: 0,
+        duration: 1500,
+        ease: 'Power2',
+        onComplete: () => {
+          if (currentBgm) {
+            currentBgm.pause();
+          }
+        }
+      });
+    }
+    
+    // 淡入胜利音乐
+    if (this.victoryBgm) {
+      (this.victoryBgm as any).volume = 0;
+      this.victoryBgm.play();
+      this.tweens.add({
+        targets: this.victoryBgm,
+        volume: 0.5,
+        duration: 1500,
+        ease: 'Power2'
+      });
+    }
   }
 
   togglePause() {
@@ -1085,6 +1269,9 @@ export class GameScene extends Phaser.Scene {
         (enemy as any).dropped = true;
         this.bossesDefeated++;
         
+        // 切换回普通音乐
+        this.switchToNormalMusic();
+        
         // 为Boss生成一件随机装备并附带词条（保存到宝箱上）
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality(this.gameDifficulty);
@@ -1149,6 +1336,9 @@ export class GameScene extends Phaser.Scene {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
         this.bossesDefeated++;
+        
+        // 切换回普通音乐
+        this.switchToNormalMusic();
         
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality(this.gameDifficulty);
@@ -1234,6 +1424,9 @@ export class GameScene extends Phaser.Scene {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
         this.bossesDefeated++;
+        
+        // 切换回普通音乐
+        this.switchToNormalMusic();
         
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality(this.gameDifficulty);
@@ -2172,6 +2365,10 @@ export class GameScene extends Phaser.Scene {
       if (isBoss && !(enemy as any).dropped) {
         // 标记已掉落，防止重复掉落
         (enemy as any).dropped = true;
+        
+        // 切换回普通音乐
+        this.switchToNormalMusic();
+        
         const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
         const quality = rollEquipmentQuality(this.gameDifficulty);
         const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
@@ -2234,6 +2431,9 @@ export class GameScene extends Phaser.Scene {
     // 设置升级中标志和暂停标志
     this.isUpgrading = true;
     this.isPaused = true;
+    
+    // 判断是否是第一次升级（玩家等级为2时）
+    const isFirstUpgrade = this.playerLevel === 2;
     
     // 创建半透明背景
     const overlay = this.add.rectangle(
@@ -2300,7 +2500,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // 使用新的配置系统获取随机技能
-    const skills = getRandomSkills(3, this.skillManager.getAllSkillLevels());
+    const skills = getRandomSkills(3, this.skillManager.getAllSkillLevels(), isFirstUpgrade);
 
     if (skills.length === 0) {
       // 所有技能已满级，直接恢复游戏
@@ -2331,6 +2531,63 @@ export class GameScene extends Phaser.Scene {
         this.onSkillSelected(allElements, skill);
       });
     });
+
+    // 添加重新抽取按钮（如果还有次数）
+    if (this.rerollsRemaining > 0 && !isFirstUpgrade) {
+      const rerollButton = this.add.rectangle(
+        this.cameras.main.centerX,
+        this.cameras.main.centerY + 180,
+        200,
+        50,
+        0x6600cc
+      );
+      rerollButton.setStrokeStyle(3, 0x9933ff);
+      rerollButton.setScrollFactor(0);
+      rerollButton.setDepth(2001);
+      rerollButton.setInteractive({ useHandCursor: true });
+
+      const rerollText = this.add.text(
+        this.cameras.main.centerX,
+        this.cameras.main.centerY + 180,
+        `🔄 重新抽取 (${this.rerollsRemaining})`,
+        {
+          fontSize: "22px",
+          color: "#ffffff",
+          fontFamily: "Arial",
+          fontStyle: "bold",
+        }
+      );
+      rerollText.setOrigin(0.5);
+      rerollText.setScrollFactor(0);
+      rerollText.setDepth(2002);
+
+      allElements.push(rerollButton, rerollText);
+
+      // 悬停效果
+      rerollButton.on('pointerover', () => {
+        rerollButton.setFillStyle(0x9933ff);
+        rerollButton.setScale(1.05);
+        rerollText.setScale(1.05);
+      });
+
+      rerollButton.on('pointerout', () => {
+        rerollButton.setFillStyle(0x6600cc);
+        rerollButton.setScale(1);
+        rerollText.setScale(1);
+      });
+
+      // 点击事件
+      rerollButton.on('pointerdown', () => {
+        // 销毁当前所有元素
+        allElements.forEach((element) => {
+          if (element.active) element.destroy();
+        });
+        
+        // 减少重抽次数并重新显示选项
+        this.rerollsRemaining--;
+        this.showUpgradeOptions();
+      });
+    }
   }
 
   onSkillSelected(allElements: any[], skill: SkillConfig) {
@@ -2673,12 +2930,16 @@ export class GameScene extends Phaser.Scene {
     this.exp = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
+    this.rerollsRemaining = 2;
     
     console.log('场景清理完成');
   }
 
   gameVictory() {
     this.isPaused = true;
+    
+    // 切换到胜利音乐
+    this.switchToVictoryMusic();
     
     // 收集场上所有金币和宝箱
     const collectedCoins: { value: number }[] = [];
@@ -2998,6 +3259,11 @@ export class GameScene extends Phaser.Scene {
     const onNextDifficultyClicked = (pointer?: any, localX?: any, localY?: any, event?: any) => {
       console.log('胜利界面-下一难度按钮被点击');
 
+      // 停止胜利音乐
+      if (this.victoryBgm) {
+        this.victoryBgm.stop();
+      }
+
       // 确保输入与交互处于启用状态
       try {
         if (this.input) {
@@ -3038,11 +3304,19 @@ export class GameScene extends Phaser.Scene {
 
     menuButton.on('pointerdown', () => {
       console.log('胜利界面-返回菜单按钮被点击');
+      // 停止胜利音乐
+      if (this.victoryBgm) {
+        this.victoryBgm.stop();
+      }
       this.scene.stop();
       this.scene.start("MenuScene");
     });
     menuText.on('pointerdown', () => {
       console.log('胜利界面-返回菜单(文字) 被点击');
+      // 停止胜利音乐
+      if (this.victoryBgm) {
+        this.victoryBgm.stop();
+      }
       this.scene.stop();
       this.scene.start("MenuScene");
     });
@@ -3185,6 +3459,9 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     // 不暂停场景，保持输入处理活跃
     // this.scene.pause();
+
+    // 切换到失败音乐
+    this.switchToGameOverMusic();
 
     // 检查是否达到解锁下一难度的条件（例如：生存到一定波数）
     const unlockThreshold = 10; // 需要生存到第10波才能解锁下一难度
@@ -3378,12 +3655,20 @@ export class GameScene extends Phaser.Scene {
     // 按钮点击事件
     restartButton.on('pointerdown', () => {
       console.log('游戏结束界面-重新开始按钮被点击');
+      // 停止失败音乐
+      if (this.gameOverBgm) {
+        this.gameOverBgm.stop();
+      }
       this.cleanupScene();
       this.scene.restart();
     });
 
     menuButton.on('pointerdown', () => {
       console.log('游戏结束界面-返回菜单按钮被点击');
+      // 停止失败音乐
+      if (this.gameOverBgm) {
+        this.gameOverBgm.stop();
+      }
       this.scene.stop();
       this.scene.start("MenuScene");
     });
