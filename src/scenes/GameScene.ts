@@ -52,7 +52,15 @@ export class GameScene extends Phaser.Scene {
   private orbitalSpeedBase = 0.05; // 基础旋转速度
 
   // 激光系统
-  private lasers: Phaser.GameObjects.Rectangle[] = [];
+  private lasers: Array<{
+    graphics: Phaser.GameObjects.Graphics;
+    particles: Phaser.GameObjects.Particles.ParticleEmitter;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    hitEnemies: Set<any>;
+  }> = [];
 
   private killCount = 0;
   private gameTime = 0;
@@ -1140,49 +1148,69 @@ export class GameScene extends Phaser.Scene {
           enemy.y
         );
 
-        // 创建激光束（长矩形）
-        const laserLength = 400; // 减小激光长度
-        const laserWidth = 4; // 减小激光宽度
-        const laser = this.add.rectangle(
-          this.player.x,
-          this.player.y,
-          laserLength,
-          laserWidth,
-          0x00ffff
-        );
-        laser.setRotation(angle);
-        laser.setOrigin(0, 0.5);
-        laser.setAlpha(0.8);
+        const laserLength = 400;
+        const endX = this.player.x + Math.cos(angle) * laserLength;
+        const endY = this.player.y + Math.sin(angle) * laserLength;
 
-        this.physics.add.existing(laser);
-        const body = laser.body as Phaser.Physics.Arcade.Body;
-        if (body) {
-          body.setSize(laserLength, laserWidth);
-        }
-
-        // 标记激光已击中的敌人，避免同一激光对同一敌人多次伤害
-        (laser as any).hitEnemies = new Set<number>();
+        // 创建激光的视觉效果（使用Graphics绘制核心激光束）
+        const laserGraphics = this.add.graphics();
+        laserGraphics.lineStyle(3, 0x00ffff, 1);
+        laserGraphics.lineBetween(this.player.x, this.player.y, endX, endY);
         
-        this.lasers.push(laser);
+        // 添加发光效果
+        laserGraphics.lineStyle(8, 0x00ffff, 0.3);
+        laserGraphics.lineBetween(this.player.x, this.player.y, endX, endY);
 
-        // 激光效果：从细变粗再变细
+        // 创建粒子发射器（沿激光路径发射粒子）
+        const particles = this.add.particles(0, 0, 'bullet-sheet', {
+          frame: [20, 21, 22],
+          lifespan: 300,
+          speed: { min: 10, max: 30 },
+          scale: { start: 0.3, end: 0 },
+          alpha: { start: 0.8, end: 0 },
+          tint: [0x00ffff, 0x0088ff, 0x00ff88],
+          blendMode: 'ADD',
+          frequency: 15,
+          emitZone: {
+            type: 'edge',
+            source: new Phaser.Geom.Line(this.player.x, this.player.y, endX, endY),
+            quantity: 10
+          }
+        });
+
+        // 保存激光数据
+        const laserData = {
+          graphics: laserGraphics,
+          particles: particles,
+          startX: this.player.x,
+          startY: this.player.y,
+          endX: endX,
+          endY: endY,
+          hitEnemies: new Set<any>()
+        };
+        
+        this.lasers.push(laserData);
+
+        // 激光闪烁效果
         this.tweens.add({
-          targets: laser,
-          scaleY: 2,
-          alpha: 1,
+          targets: laserGraphics,
+          alpha: { from: 1, to: 0.3 },
           duration: 100,
           yoyo: true,
-          repeat: 1,
+          repeat: Math.floor(this.skillManager.stats.laserDuration / 200)
         });
 
         // 激光持续时间后销毁
         this.time.delayedCall(this.skillManager.stats.laserDuration, () => {
-          const index = this.lasers.indexOf(laser);
+          const index = this.lasers.indexOf(laserData);
           if (index > -1) {
             this.lasers.splice(index, 1);
           }
-          if (laser.active) {
-            laser.destroy();
+          if (laserGraphics.active) {
+            laserGraphics.destroy();
+          }
+          if (particles.active) {
+            particles.destroy();
           }
         });
       }
@@ -1386,16 +1414,16 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  hitEnemyWithLaser(enemy: any, laser?: any) {
+  hitEnemyWithLaser(enemy: any, laserData?: any) {
     if (!enemy || !enemy.active) return;
 
     // 如果提供了激光对象，检查该激光是否已经击中过这个敌人
-    if (laser && (laser as any).hitEnemies) {
+    if (laserData && laserData.hitEnemies) {
       // 使用敌人对象本身作为唯一标识（Set可以存储对象引用）
-      if ((laser as any).hitEnemies.has(enemy)) {
+      if (laserData.hitEnemies.has(enemy)) {
         return; // 该激光已经击中过这个敌人，跳过
       }
-      (laser as any).hitEnemies.add(enemy);
+      laserData.hitEnemies.add(enemy);
     }
 
     // 检查是否已经被激光击中过（全局冷却，避免重复伤害）
@@ -3022,9 +3050,14 @@ export class GameScene extends Phaser.Scene {
     
     // 清理激光
     if (this.lasers && this.lasers.length > 0) {
-      this.lasers.forEach(laser => {
-        if (laser && laser.active) {
-          laser.destroy();
+      this.lasers.forEach(laserData => {
+        if (laserData) {
+          if (laserData.graphics && laserData.graphics.active) {
+            laserData.graphics.destroy();
+          }
+          if (laserData.particles && laserData.particles.active) {
+            laserData.particles.destroy();
+          }
         }
       });
       this.lasers = [];
@@ -3938,20 +3971,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 激光碰撞检测（穿透性）
-    this.lasers.forEach((laser) => {
-      if (!laser || !laser.active) return;
+    this.lasers.forEach((laserData) => {
+      if (!laserData || !laserData.graphics.active) return;
 
       this.enemies.children.entries.forEach((enemy) => {
         if (!enemy || !enemy.active) return;
 
-        // 使用更精确的线段-圆形碰撞检测
-        // 计算激光的起点和终点
-        const angle = laser.rotation;
-        const laserStartX = laser.x;
-        const laserStartY = laser.y;
-        const laserEndX = laser.x + Math.cos(angle) * 400; // laserLength
-        const laserEndY = laser.y + Math.sin(angle) * 400;
-        
         // 敌人位置
         const enemyX = (enemy as any).x;
         const enemyY = (enemy as any).y;
@@ -3960,14 +3985,14 @@ export class GameScene extends Phaser.Scene {
         // 计算点到线段的距离
         const distance = this.pointToLineSegmentDistance(
           enemyX, enemyY,
-          laserStartX, laserStartY,
-          laserEndX, laserEndY
+          laserData.startX, laserData.startY,
+          laserData.endX, laserData.endY
         );
         
         // 如果距离小于敌人半径 + 激光半宽，则视为击中
         // 增加判定范围，让激光更容易击中
         if (distance < enemyRadius + 10) { // 10像素的容差
-          this.hitEnemyWithLaser(enemy, laser);
+          this.hitEnemyWithLaser(enemy, laserData);
         }
       });
     });
