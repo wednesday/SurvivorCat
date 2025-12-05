@@ -142,6 +142,8 @@ export class MenuScene extends Phaser.Scene {
     this.load.audio('bossBgm', 'assets/audio/illusion-of-deception-cinematic-background-music-for-video-short-430672.mp3');
     this.load.audio('gameOverBgm', 'assets/audio/relaxing-guitar-loop-v5-245859.mp3');
     this.load.audio('victoryBgm', 'assets/audio/epic-rise-334778.mp3');
+    // 资源已在 LoadingScene 中加载
+    // 这里仅保留 MenuScene 特定的资源（如果有的话）
   }
   
   async create() {

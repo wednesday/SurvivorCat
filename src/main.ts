@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { LoadingScene } from './scenes/LoadingScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { InventoryScene } from './scenes/InventoryScene';
@@ -11,7 +12,7 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 1280,
   height: 720,
   parent: 'game-container',
-  backgroundColor: '#2d2d2d',
+  backgroundColor: '#1a1a2e',
   physics: {
     default: 'arcade',
     arcade: {
@@ -19,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [MenuScene, SafeHouseScene, GameScene, InventoryScene, TestScene],
+  scene: [MenuScene, SafeHouseScene, GameScene, InventoryScene, TestScene, LoadingScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
