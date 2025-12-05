@@ -1596,15 +1596,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   // 辅助方法 - 对敌人造成伤害
-  damageEnemy(enemy: any, damage: number) {
+  damageEnemy(enemy: any, damage: number, damageType: 'normal' | 'poison' = 'normal') {
     if (!enemy.active) return;
 
     // 四舍五入到1位小数避免浮点数累积误差
     const actualDamage = Math.round(damage * 10) / 10;
     enemy.hp -= actualDamage;
     
-    // 显示伤害数字
-    this.showDamageText(enemy.x, enemy.y - 20, actualDamage);
+    // 显示伤害数字，毒伤害显示为绿色
+    const color = damageType === 'poison' ? '#44ff44' : '#ff4444';
+    this.showDamageText(enemy.x, enemy.y - 20, actualDamage, color);
 
     // 闪烁效果
     this.tweens.add({
@@ -2597,12 +2598,12 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  showDamageText(x: number, y: number, damage: number) {
+  showDamageText(x: number, y: number, damage: number, color: string = '#ff4444') {
     // 四舍五入到1位小数
     const displayDamage = Math.round(damage * 10) / 10;
     const damageText = this.add.text(x, y, `-${displayDamage}`, {
       fontSize: '20px',
-      color: '#ff4444',
+      color: color,
       fontFamily: 'Arial',
       fontStyle: 'bold',
       stroke: '#000000',
@@ -4204,7 +4205,7 @@ export class GameScene extends Phaser.Scene {
     
     // 更新毒性系统
     this.poisonSystem.update(delta, this.enemies, (enemy, damage) => {
-      this.damageEnemy(enemy, damage);
+      this.damageEnemy(enemy, damage, 'poison');
     });
     
     // Boss攻击逻辑

@@ -228,11 +228,13 @@ export class TestScene extends Phaser.Scene {
     const escKey = this.input.keyboard!.addKey('ESC');
     if (Phaser.Input.Keyboard.JustDown(escKey)) {
       this.scene.stop("GameScene");
+      this.scene.stop("TestScene");
       this.scene.start("MenuScene");
+      return; // 立即返回，避免后续代码执行
     }
     
     // 更新秒伤统计
-    if (this.dpsText) {
+    if (this.dpsText && this.dpsText.active) {
       const now = Date.now();
       const elapsedSeconds = (now - this.startTime) / 1000;
       
@@ -250,5 +252,15 @@ export class TestScene extends Phaser.Scene {
         `瞬时DPS: ${recentDamage.toFixed(1)}`
       );
     }
+  }
+  
+  shutdown() {
+    // 清理资源
+    if (this.dpsText) {
+      this.dpsText.destroy();
+      this.dpsText = undefined;
+    }
+    this.damageHistory = [];
+    this.totalDamage = 0;
   }
 }
