@@ -219,8 +219,6 @@ export class LoadingScene extends Phaser.Scene {
     });
     
     // 预加载地形tile图集
-    this.load.image('grass-tiles', 'assets/tile/grass-tiles.png');
-    this.load.image('ground-tiles', 'assets/tile/ground-tiles.png');
     this.load.spritesheet('terrain-tiles', 'assets/tile/tail.png', {
       frameWidth: 176,
       frameHeight: 176
@@ -229,32 +227,17 @@ export class LoadingScene extends Phaser.Scene {
     this.load.bitmapFont('nokia16', 'assets/tile/nokia16.png', 'assets/tile/nokia16.xml');
     
     // 预加载子弹精灵图
-    this.load.spritesheet('bullet-sheet', 'assets/bullet/Projectiles_32x32.png', {
-      frameWidth: 32,
-      frameHeight: 32
-    });
-    
-    // 预加载旧版子弹精灵图（兼容）
-    this.load.spritesheet('bullet-sheet-old', 'assets/bullet/Bullet_Pixel_16x16.png', {
+    this.load.spritesheet('bullet-sheet', 'assets/bullet/Bullet_Pixel_16x16.png', {
       frameWidth: 16,
       frameHeight: 16
     });
     
-    // 预加载音效
-    this.load.audio('shoot', 'assets/audio/shoot.wav');
-    this.load.audio('hit', 'assets/audio/hit.wav');
-    this.load.audio('pickup', 'assets/audio/pickup.wav');
-    this.load.audio('levelup', 'assets/audio/levelup.wav');
-    this.load.audio('laserShot', 'assets/audio/laser.wav');
-    this.load.audio('orbitalShot', 'assets/audio/orbital.wav');
-    this.load.audio('explosion', 'assets/audio/explosion.wav');
+    // 预加载音效（使用实际存在的音效文件）
     this.load.audio('CrossbowShoot6', 'assets/audio/CrossbowShoot6.wav');
     this.load.audio('culverinshoot1', 'assets/audio/culverinshoot1.wav');
+    this.load.audio('laserShot', 'assets/audio/laserShot.mp3');
     
     // 预加载背景音乐
-    this.load.audio('bgm-normal', 'assets/audio/bgm-normal.mp3');
-    this.load.audio('bgm-boss', 'assets/audio/bgm-boss.mp3');
-    this.load.audio('bgm-safehouse', 'assets/audio/bgm-safehouse.mp3');
     this.load.audio('bgm', 'assets/audio/n48.mp3');
     this.load.audio('bossBgm', 'assets/audio/illusion-of-deception-cinematic-background-music-for-video-short-430672.mp3');
     this.load.audio('gameOverBgm', 'assets/audio/relaxing-guitar-loop-v5-245859.mp3');
