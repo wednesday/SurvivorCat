@@ -34,6 +34,10 @@ export interface EnemyConfig {
   
   // Boss属性
   isBoss: boolean;             // 是否为Boss
+  
+  // 免疫属性
+  immuneToPoison?: boolean;    // 是否免疫毒素
+  immuneToCold?: boolean;      // 是否免疫寒冷
 }
 
 // 怪物波次配置
@@ -90,7 +94,8 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     
     // 难度2开始出现，逐渐增加密度
     spawnDensity: [0, 40, 50, 60, 60, 70, 70, 60, 60, 45, 30, 25, 20, 15, 10],
-    isBoss: false
+    isBoss: false,
+    immuneToCold: true  // 蓝色史莱姆免疫寒冷
   },
   
   // ========== 绿色史莱姆 - 高级敌人 ==========
@@ -111,7 +116,8 @@ export const ENEMY_CONFIGS: EnemyConfig[] = [
     
     // 难度5开始出现
     spawnDensity: [0, 0, 0, 0, 50, 60, 70, 70, 60, 50, 45, 40, 35, 30, 25],
-    isBoss: false
+    isBoss: false,
+    immuneToPoison: true  // 绿色史莱姆免疫毒素
   },
   
   // ========== 黄色史莱姆 - 精英敌人 ==========

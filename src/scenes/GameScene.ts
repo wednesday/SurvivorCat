@@ -3,6 +3,7 @@ import { SkillManager } from "../systems/SkillManager";
 import { EquipmentManager } from "../systems/EquipmentManager";
 import { MapManager } from "../systems/MapManager";
 import { ExplosionSystem } from "../systems/ExplosionSystem";
+import { PoisonSystem } from "../systems/PoisonSystem";
 import { EnemyManager, Enemy } from "../systems/EnemyManager";
 import { getRandomSkills, SkillConfig } from "../config/SkillConfig";
 import { EQUIPMENT_CONFIGS, getEquipmentById } from '../config/EquipmentConfig';
@@ -25,6 +26,7 @@ export class GameScene extends Phaser.Scene {
   // 技能管理系统
   private skillManager!: SkillManager;
   private explosionSystem!: ExplosionSystem;
+  private poisonSystem!: PoisonSystem;
   private enemyManager!: EnemyManager;
   private mapManager!: MapManager;
   private equipmentManager!: EquipmentManager;
@@ -117,8 +119,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   async create() {
+    console.log('[GameScene] create() 开始执行');
+    
+    // 显式重置所有游戏状态变量（scene.restart不会重新实例化类）
+    this.isPaused = false;
+    this.isUpgrading = false;
+    this.isPlayerHurt = false;
+    this.isBossFight = false;
+    this.currentMusic = 'normal';
+    
+    // 重置游戏进度
+    this.gameTime = 0;
+    this.killCount = 0;
+    this.coinsCollected = 0;
+    this.bossesDefeated = 0;
+    this.playerLevel = 1;
+    this.exp = 0;
+    this.bonusLevelCount = 0;
+    this.bonusLevelChain = 0;
+    this.difficultyLevel = 1;
+    this.lastDifficultyIncreaseTime = 0;
+    
+    // 重置定时器
+    this.projectileTimer = 0;
+    this.laserTimer = 0;
+    this.orbitalRotation = 0;
+    
     // 加载游戏难度设置
     this.gameDifficulty = await SaveManager.getDifficulty();
+    console.log('[GameScene] 当前游戏难度:', this.gameDifficulty);
     
     // 初始化音乐
     this.initMusic();
@@ -210,6 +239,7 @@ export class GameScene extends Phaser.Scene {
     // 初始化技能管理系统（每次create时都重新创建以确保状态干净）
     this.skillManager = new SkillManager();
     this.explosionSystem = new ExplosionSystem(this);
+    this.poisonSystem = new PoisonSystem(this);
 
     // 初始化敌人管理器（在enemies组创建之后，每次都重新创建）
     this.enemyManager = new EnemyManager(
@@ -242,7 +272,7 @@ export class GameScene extends Phaser.Scene {
     this.difficultyLevel = 1;
     this.lastDifficultyIncreaseTime = 0;
 
-    // 清空轨道球
+    // 清空守护球
     this.orbitals = [];
     this.orbitalRotation = 0;
 
@@ -307,7 +337,7 @@ export class GameScene extends Phaser.Scene {
       this
     );
 
-    // 轨道球与敌人的碰撞检测（将在update中手动检测）
+    // 守护球与敌人的碰撞检测（将在update中手动检测）
 
     // 设置键盘输入
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -319,12 +349,12 @@ export class GameScene extends Phaser.Scene {
     // 初始化装备管理器（会从存档加载已装备物品并将效果应用到 skillManager）
     this.equipmentManager = new EquipmentManager(this.skillManager);
 
-    // 设置装备变化回调，用于同步轨道球数量
+    // 设置装备变化回调，用于同步守护球数量
     this.equipmentManager.setEquipmentChangeCallback(() => {
       this.syncOrbitalCount();
     });
 
-    // 同步轨道球数量
+    // 同步守护球数量
     this.syncOrbitalCount();
     // 确保玩家当前生命值基于装备和技能的最大生命值
     this.playerHP = this.skillManager.stats.maxHP;
@@ -366,6 +396,14 @@ export class GameScene extends Phaser.Scene {
 
     // 创建史莱姆动画
     this.createSlimeAnimations();
+    
+    // 确保物理引擎处于运行状态
+    try {
+      this.physics.resume();
+      console.log('[GameScene] create() 完成，物理引擎已启动');
+    } catch (e) {
+      console.warn('[GameScene] 物理引擎启动失败', e);
+    }
   }
 
   createSlimeAnimations() {
@@ -869,10 +907,9 @@ export class GameScene extends Phaser.Scene {
       { label: '子弹数量', value: this.skillManager.stats.projectileCount.toString() },
       { label: '子弹伤害', value: this.skillManager.stats.projectileDamage.toString() },
       { label: '攻击速度', value: (1000 / this.skillManager.getProjectileRate(1000)).toFixed(2) + '/s' },
-      { label: '轨道球数量', value: this.orbitals.length.toString() },
-      { label: '轨道球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
+      { label: '守护球数量', value: this.orbitals.length.toString() },
+      { label: '守护球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
       { label: '轨道轨道半径', value: this.skillManager.stats.orbitalRadius.toString() },
-      { label: '轨道球速度', value: this.skillManager.stats.orbitalSpeedMultiplier.toString() },
       { label: '激光数量', value: this.skillManager.stats.laserCount.toString() },
       { label: '激光伤害', value: this.skillManager.stats.laserDamage.toString() },
       { label: '拾取范围', value: this.skillManager.stats.pickupRange.toFixed(0) },
@@ -882,9 +919,6 @@ export class GameScene extends Phaser.Scene {
           : '未解锁' },
       { label: '爆炸伤害', value: this.skillManager.stats.explosionEnabled 
           ? this.skillManager.stats.explosionDamage.toString() 
-          : '未解锁' },
-      { label: '爆炸范围', value: this.skillManager.stats.explosionEnabled 
-          ? this.skillManager.stats.explosionRadius.toFixed(0) 
           : '未解锁' }
     ];
     
@@ -1042,21 +1076,64 @@ export class GameScene extends Phaser.Scene {
 
     // 向每个目标发射子弹
     targets.forEach((target: any) => {
-      // 创建抛射物（使用第4行子弹，帧15-19）
+      // 根据属性选择子弹类型（优先级：毒冰融合 > 寒冷 > 毒性 > 普通）
+      const hasIceEffect = this.skillManager.stats.ice > 0;
+      const hasPoisonEffect = this.skillManager.stats.drug > 0;
+      const hasFusionEffect = hasIceEffect && hasPoisonEffect; // 毒冰融合
+      
+      let bulletSheet: string;
+      let bulletFrame: number;
+      let bulletAnimKey: string;
+      
+      if (hasFusionEffect) {
+        bulletSheet = 'fusion-bullet-sheet'; // 使用紫色融合子弹图集
+        bulletFrame = 0; // 使用第1行第1帧
+        bulletAnimKey = 'fusion-bullet-anim';
+      } else if (hasIceEffect) {
+        bulletSheet = 'ice-bullet-sheet';
+        bulletFrame = 0; // 寒冷子弹用第1行第1帧
+        bulletAnimKey = 'ice-bullet-anim';
+      } else if (hasPoisonEffect) {
+        bulletSheet = 'poison-bullet-sheet';
+        bulletFrame = 0; // 毒性子弹用第1行第1帧
+        bulletAnimKey = 'poison-bullet-anim';
+      } else {
+        bulletSheet = 'bullet-sheet';
+        bulletFrame = 20; // 普通子弹用第4行第1帧
+        bulletAnimKey = 'bullet-type4-anim';
+      }
+      
+      // 创建抛射物
       const projectile = this.add.sprite(
         this.player.x,
         this.player.y,
-        'bullet-sheet',
-        20 // 第4行第1帧 (行索引从0开始，所以第4行=3*5=15)
+        bulletSheet,
+        bulletFrame
       );
-      // 播放子弹动画（第4行的5帧）
-      const bulletAnimKey = 'bullet-type4-anim';
+      
+      // 播放子弹动画
       if (!this.anims.exists(bulletAnimKey)) {
+        let animStart: number, animEnd: number;
+        
+        if (hasFusionEffect) {
+          animStart = 0;
+          animEnd = 4; // 融合子弹第1行动画
+        } else if (hasIceEffect) {
+          animStart = 0;
+          animEnd = 4; // 寒冷子弹第1行动画
+        } else if (hasPoisonEffect) {
+          animStart = 0;
+          animEnd = 4; // 毒性子弹第1行动画
+        } else {
+          animStart = 20;
+          animEnd = 24; // 普通子弹第4行动画
+        }
+        
         this.anims.create({
           key: bulletAnimKey,
-          frames: this.anims.generateFrameNumbers('bullet-sheet', {
-            start: 20, // 第4行第1帧
-            end: 24    // 第4行第5帧
+          frames: this.anims.generateFrameNumbers(bulletSheet, {
+            start: animStart,
+            end: animEnd
           }),
           frameRate: 10,
           repeat: -1
@@ -1200,16 +1277,42 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i < splitCount; i++) {
         const splitAngle = angleStep * i + randomOffset;
         
+        // 根据属性选择子弹类型（优先级：毒冰融合 > 寒冷 > 毒性 > 普通）
+        const hasIceEffect = this.skillManager.stats.ice > 0;
+        const hasPoisonEffect = this.skillManager.stats.drug > 0;
+        const hasFusionEffect = hasIceEffect && hasPoisonEffect; // 毒冰融合
+        
+        let bulletSheet: string;
+        let bulletFrame: number;
+        let bulletAnimKey: string;
+        
+        if (hasFusionEffect) {
+          bulletSheet = 'fusion-bullet-sheet'; // 使用紫色融合子弹图集
+          bulletFrame = 0; // 使用第1行第1帧
+          bulletAnimKey = 'fusion-bullet-anim';
+        } else if (hasIceEffect) {
+          bulletSheet = 'ice-bullet-sheet';
+          bulletFrame = 0;
+          bulletAnimKey = 'ice-bullet-anim';
+        } else if (hasPoisonEffect) {
+          bulletSheet = 'poison-bullet-sheet';
+          bulletFrame = 0;
+          bulletAnimKey = 'poison-bullet-anim';
+        } else {
+          bulletSheet = 'bullet-sheet';
+          bulletFrame = 20;
+          bulletAnimKey = 'bullet-type4-anim';
+        }
+        
         // 创建分裂子弹
         const splitProjectile = this.add.sprite(
           projectile.x,
           projectile.y,
-          'bullet-sheet',
-          20
+          bulletSheet,
+          bulletFrame
         );
         
         // 播放子弹动画
-        const bulletAnimKey = 'bullet-type4-anim';
         if (this.anims.exists(bulletAnimKey)) {
           splitProjectile.play(bulletAnimKey);
         }
@@ -1218,8 +1321,9 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.existing(splitProjectile);
         this.projectiles.add(splitProjectile);
         
-        // 标记为分裂子弹，防止无限分裂
+        // 标记为分裂子弹，防止无限分裂，并标记伤害、毒性、寒冷减半
         (splitProjectile as any).isSplitProjectile = true;
+        (splitProjectile as any).isHalfDamage = true; // 分裂子弹伤害减半
         
         // 设置分裂子弹的速度
         const splitBody = splitProjectile.body as Phaser.Physics.Arcade.Body;
@@ -1243,8 +1347,29 @@ export class GameScene extends Phaser.Scene {
     
     projectile.destroy();
 
-    const damage = this.skillManager.stats.projectileDamage;
+    // 检查是否为分裂子弹，分裂子弹伤害、毒性、寒冷都减半
+    const isHalfDamage = (projectile as any).isHalfDamage || false;
+    const damageMultiplier = isHalfDamage ? 0.5 : 1;
+
+    const damage = this.skillManager.stats.projectileDamage * damageMultiplier;
     enemy.hp -= damage;
+    
+    // 应用毒性效果（分裂子弹减半）
+    if (this.skillManager.stats.drug > 0) {
+      const drugLevel = this.skillManager.stats.drug * damageMultiplier;
+      const drugSpread = this.skillManager.stats.drugSpread * damageMultiplier;
+      this.poisonSystem.applyPoison(
+        enemy,
+        drugLevel,
+        drugSpread
+      );
+    }
+    
+    // 应用寒冷效果（分裂子弹减半）
+    if (this.skillManager.stats.ice > 0) {
+      const iceLevel = this.skillManager.stats.ice * damageMultiplier;
+      this.applyIceEffect(enemy, iceLevel);
+    }
     
     // 显示伤害数字
     this.showDamageText(enemy.x, enemy.y - 20, damage);
@@ -1262,14 +1387,133 @@ export class GameScene extends Phaser.Scene {
       this.skillManager.stats.explosionEnabled &&
       Math.random() < this.skillManager.stats.explosionChance
     ) {
-      this.explosionSystem.createExplosion(
-        enemy.x,
-        enemy.y,
-        this.skillManager.stats.explosionDamage,
-        this.skillManager.stats.explosionRadius,
-        this.enemies,
-        (hitEnemy, damage) => this.damageEnemy(hitEnemy, damage)
-      );
+      // 检查是否为毒冰融合爆炸、毒性爆炸或寒冰爆炸
+      const isPoisonExplosion = this.skillManager.stats.drug > 0;
+      const iceLevel = this.skillManager.stats.ice || 0;
+      const isFusionExplosion = isPoisonExplosion && iceLevel > 0;
+      
+      if (isFusionExplosion) {
+        // 融合爆炸特殊处理：
+        // 1. 计算范围内所有敌人的毒伤和寒冷值总和
+        // 2. 造成额外伤害 = 消耗的所有毒伤 + 寒冷值
+        // 3. 如果敌人存活且寒冷值>=15，冰冻2秒
+        
+        const explosionRadius = this.skillManager.stats.explosionRadius;
+        let totalPoisonDamage = 0;
+        let totalIceValue = 0;
+        const affectedEnemies: Array<{enemy: any, distance: number, poisonDamage: number, iceValue: number}> = [];
+        
+        // 收集范围内敌人的状态
+        this.enemies.getChildren().forEach((hitEnemy: any) => {
+          if (!hitEnemy || !hitEnemy.active || !hitEnemy.body) return;
+          
+          const distance = Phaser.Math.Distance.Between(enemy.x, enemy.y, hitEnemy.x, hitEnemy.y);
+          
+          if (distance <= explosionRadius) {
+            const enemyPoisonDamage = this.poisonSystem.getTotalPoisonDamage(hitEnemy);
+            const enemyIceValue = hitEnemy.iceValue || 0;
+            
+            affectedEnemies.push({
+              enemy: hitEnemy,
+              distance: distance,
+              poisonDamage: enemyPoisonDamage,
+              iceValue: enemyIceValue
+            });
+            
+            totalPoisonDamage += enemyPoisonDamage;
+            totalIceValue += enemyIceValue;
+          }
+        });
+        
+        // 计算融合爆炸的额外伤害
+        const fusionBonusDamage = totalPoisonDamage + totalIceValue;
+        
+        // 创建融合爆炸视觉效果
+        this.explosionSystem.createExplosion(
+          enemy.x,
+          enemy.y,
+          this.skillManager.stats.explosionDamage + fusionBonusDamage,
+          explosionRadius,
+          this.enemies,
+          (hitEnemy, damage) => this.damageEnemy(hitEnemy, damage),
+          isPoisonExplosion,
+          iceLevel,
+          undefined, // 不应用普通寒冰效果
+          true // 标记为融合爆炸
+        );
+        
+        // 对每个受影响的敌人进行特殊处理
+        affectedEnemies.forEach(({enemy: hitEnemy, poisonDamage, iceValue}) => {
+          // 消耗毒性状态
+          if (poisonDamage > 0) {
+            this.poisonSystem.clearPoison(hitEnemy);
+          }
+          
+          // 重置寒冷值并检查是否冰冻
+          if (hitEnemy.active && iceValue >= 15) {
+            // 消耗寒冷值
+            hitEnemy.iceValue = 0;
+            
+            // 冰冻2秒
+            hitEnemy.isFrozen = true;
+            hitEnemy.frozenUntil = this.time.now + 2000;
+            hitEnemy.speed = 0;
+            
+            const enemyBody = hitEnemy.body as Phaser.Physics.Arcade.Body;
+            if (enemyBody) {
+              enemyBody.stop();
+              enemyBody.setVelocity(0, 0);
+              enemyBody.setAcceleration(0, 0);
+              enemyBody.moves = false;
+            }
+            
+            // 冰冻视觉效果
+            hitEnemy.setTint(0x00ffff);
+            
+            const freezeEffect = this.add.circle(hitEnemy.x, hitEnemy.y, 20, 0x00ffff, 0.5);
+            this.tweens.add({
+              targets: freezeEffect,
+              scale: { from: 0.5, to: 1.5 },
+              alpha: { from: 0.5, to: 0 },
+              duration: 500,
+              onComplete: () => {
+                if (freezeEffect.active) freezeEffect.destroy();
+              }
+            });
+          } else if (hitEnemy.active && iceValue > 0) {
+            // 未达到冰冻阈值，消耗寒冷值
+            hitEnemy.iceValue = 0;
+            hitEnemy.speed = hitEnemy.originalSpeed || hitEnemy.speed;
+            hitEnemy.clearTint();
+          }
+        });
+        
+      } else {
+        // 普通毒性或寒冰爆炸
+        // 如果是毒性爆炸，先引爆范围内所有中毒敌人的剩余毒伤
+        if (isPoisonExplosion) {
+          this.poisonSystem.detonatePoison(
+            enemy.x,
+            enemy.y,
+            this.skillManager.stats.explosionRadius,
+            this.enemies,
+            (hitEnemy, damage) => this.damageEnemy(hitEnemy, damage)
+          );
+        }
+        
+        // 然后造成正常的爆炸伤害
+        this.explosionSystem.createExplosion(
+          enemy.x,
+          enemy.y,
+          this.skillManager.stats.explosionDamage,
+          this.skillManager.stats.explosionRadius,
+          this.enemies,
+          (hitEnemy, damage) => this.damageEnemy(hitEnemy, damage),
+          isPoisonExplosion,
+          iceLevel,
+          (hitEnemy, iceValue) => this.applyIceEffect(hitEnemy, iceValue)
+        );
+      }
     }
 
     if (enemy.hp <= 0) {
@@ -1327,10 +1571,12 @@ export class GameScene extends Phaser.Scene {
   damageEnemy(enemy: any, damage: number) {
     if (!enemy.active) return;
 
-    enemy.hp -= damage;
+    // 四舍五入到1位小数避免浮点数累积误差
+    const actualDamage = Math.round(damage * 10) / 10;
+    enemy.hp -= actualDamage;
     
     // 显示伤害数字
-    this.showDamageText(enemy.x, enemy.y - 20, damage);
+    this.showDamageText(enemy.x, enemy.y - 20, actualDamage);
 
     // 闪烁效果
     this.tweens.add({
@@ -2324,7 +2570,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   showDamageText(x: number, y: number, damage: number) {
-    const damageText = this.add.text(x, y, `-${damage}`, {
+    // 四舍五入到1位小数
+    const displayDamage = Math.round(damage * 10) / 10;
+    const damageText = this.add.text(x, y, `-${displayDamage}`, {
       fontSize: '20px',
       color: '#ff4444',
       fontFamily: 'Arial',
@@ -2346,11 +2594,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   addOrbital() {
-    // 创建轨道球（使用第2行子弹，帧5-9）
+    // 创建守护球（使用第2行子弹，帧5-9）
     const orbital = this.add.sprite(0, 0, 'bullet-sheet', 5);
     orbital.setScale(1.8);
     
-    // 创建轨道球动画（第2行的5帧）
+    // 创建守护球动画（第2行的5帧）
     const orbitalAnimKey = 'bullet-type2-anim';
     if (!this.anims.exists(orbitalAnimKey)) {
       this.anims.create({
@@ -2381,18 +2629,18 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // 同步轨道球数量与 skillManager.stats.orbitalCount
+  // 同步守护球数量与 skillManager.stats.orbitalCount
   syncOrbitalCount() {
     const targetCount = this.skillManager.stats.orbitalCount;
     const currentCount = this.orbitals.length;
 
     if (currentCount < targetCount) {
-      // 需要添加轨道球
+      // 需要添加守护球
       for (let i = currentCount; i < targetCount; i++) {
         this.addOrbital();
       }
     } else if (currentCount > targetCount) {
-      // 需要移除轨道球
+      // 需要移除守护球
       for (let i = currentCount; i > targetCount; i--) {
         const orbital = this.orbitals.pop();
         if (orbital) {
@@ -2407,9 +2655,9 @@ export class GameScene extends Phaser.Scene {
 
     // 更新轨道旋转
     this.orbitalRotation +=
-      this.orbitalSpeedBase * this.skillManager.stats.orbitalSpeedMultiplier;
+      this.orbitalSpeedBase + this.skillManager.stats.orbitalSpeed * 0.001;
 
-    // 更新每个轨道球的位置
+    // 更新每个守护球的位置
     this.orbitals.forEach((orbital, index) => {
       if (!orbital || !orbital.active) return;
 
@@ -2457,7 +2705,7 @@ export class GameScene extends Phaser.Scene {
       yoyo: true,
     });
 
-    // 轨道球碰撞效果
+    // 守护球碰撞效果
     this.tweens.add({
       targets: orbital,
       scale: 1.5,
@@ -2951,7 +3199,7 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // 如果是轨道类技能，需要同步轨道球数量
+    // 如果是轨道类技能，需要同步守护球数量
     if (skill.effects?.orbitalCount && skill.effects.orbitalCount > 0) {
       this.syncOrbitalCount();
     }
@@ -3010,7 +3258,7 @@ export class GameScene extends Phaser.Scene {
       this.coins.clear(true, true);
     }
     
-    // 清理轨道球
+    // 清理守护球
     if (this.orbitals && this.orbitals.length > 0) {
       this.orbitals.forEach(orbital => {
         if (orbital && orbital.active) {
@@ -3034,6 +3282,25 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = false;
     this.isUpgrading = false;
     
+    // 重置暂停UI状态
+    if (this.pauseOverlay) {
+      this.pauseOverlay.setVisible(false);
+    }
+    if (this.pauseText) {
+      this.pauseText.setVisible(false);
+    }
+    if (this.pauseHintText) {
+      this.pauseHintText.setVisible(false);
+      // 停止任何正在进行的闪烁动画
+      this.tweens.killTweensOf(this.pauseHintText);
+      this.pauseHintText.setAlpha(1);
+    }
+    // 清理暂停统计面板
+    if (this.pauseStatsPanel) {
+      this.pauseStatsPanel.destroy();
+      this.pauseStatsPanel = null;
+    }
+    
     // 重置游戏进度变量
     this.difficultyLevel = 1;
     this.gameTime = 0;
@@ -3052,6 +3319,11 @@ export class GameScene extends Phaser.Scene {
 
   async gameVictory() {
     this.isPaused = true;
+    
+    // 清理毒性系统
+    if (this.poisonSystem) {
+      this.poisonSystem.clear();
+    }
     
     // 切换到胜利音乐
     this.switchToVictoryMusic();
@@ -3412,8 +3684,14 @@ export class GameScene extends Phaser.Scene {
 
       // 重置场景状态并重启（create() 会从 SaveManager 读取新的难度）
       this.isPaused = false;
-      try { this.physics.resume(); } catch (e) {}
+      try { 
+        this.physics.resume(); 
+        console.log('[gameVictory] 物理引擎已恢复');
+      } catch (e) {
+        console.warn('[gameVictory] 物理引擎恢复失败', e);
+      }
       this.cleanupScene();
+      console.log('[gameVictory] 即将重启场景...');
       this.scene.restart();
     };
 
@@ -3577,6 +3855,11 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     // 不暂停场景，保持输入处理活跃
     // this.scene.pause();
+
+    // 清理毒性系统
+    if (this.poisonSystem) {
+      this.poisonSystem.clear();
+    }
 
     // 切换到失败音乐
     this.switchToGameOverMusic();
@@ -3780,7 +4063,16 @@ export class GameScene extends Phaser.Scene {
       if (this.gameOverBgm) {
         this.gameOverBgm.stop();
       }
+      // 确保物理引擎恢复
+      this.isPaused = false;
+      try { 
+        this.physics.resume(); 
+        console.log('[gameOver] 物理引擎已恢复');
+      } catch (e) {
+        console.warn('[gameOver] 物理引擎恢复失败', e);
+      }
       this.cleanupScene();
+      console.log('[gameOver] 即将重启场景...');
       this.scene.restart();
     });
 
@@ -3865,12 +4157,22 @@ export class GameScene extends Phaser.Scene {
     // 摄像机跟随玩家
     this.cameras.main.centerOn(this.player.x, this.player.y);
 
-    // 更新轨道球位置
+    // 更新守护球位置
     this.updateOrbitals();
 
     // 更新敌人管理器（生成和AI）
-    this.enemyManager.update(delta);
-    this.enemyManager.updateEnemyAI();
+    if (this.enemyManager) {
+      this.enemyManager.update(delta);
+      this.enemyManager.updateEnemyAI();
+    }
+    
+    // 更新冰冻系统（在AI之后，强制冻住的敌人停止移动）
+    this.updateFrozenEnemies();
+    
+    // 更新毒性系统
+    this.poisonSystem.update(delta, this.enemies, (enemy, damage) => {
+      this.damageEnemy(enemy, damage);
+    });
     
     // Boss攻击逻辑
     this.enemies.getChildren().forEach((enemy: any) => {
@@ -4118,7 +4420,9 @@ export class GameScene extends Phaser.Scene {
     this.lastDifficultyIncreaseTime = this.gameTime;
 
     // 更新EnemyManager的难度等级（只影响新生成的怪物）
-    this.enemyManager.setDifficulty(this.difficultyLevel);
+    if (this.enemyManager) {
+      this.enemyManager.setDifficulty(this.difficultyLevel);
+    }
 
     // 更新难度显示
     const difficultyName = getDifficultyName(this.gameDifficulty);
@@ -4196,5 +4500,128 @@ export class GameScene extends Phaser.Scene {
     
     // 返回距离
     return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+  }
+  
+  // 应用寒冷效果
+  applyIceEffect(enemy: any, iceLevel: number): void {
+    if (!enemy || !enemy.active) return;
+    
+    // 检查寒冷免疫
+    if (enemy.enemyConfig?.immuneToCold) return;
+    
+    // 初始化寒冷值
+    if (enemy.iceValue === undefined) {
+      enemy.iceValue = 0;
+      enemy.isFrozen = false;
+      enemy.originalSpeed = enemy.speed;
+    }
+    
+    // 检查是否处于冰冷抗性期间
+    if (enemy.iceResistUntil && this.time.now < enemy.iceResistUntil) {
+      return; // 抗性期间不受寒冷影响
+    }
+    
+    // Boss有3倍寒冷抗性
+    const isBoss = enemy.enemyConfig?.isBoss || false;
+    const actualIceLevel = isBoss ? iceLevel / 3 : iceLevel;
+    
+    // 增加寒冷值，限制在0-10之间
+    enemy.iceValue = Math.min(10, enemy.iceValue + actualIceLevel);
+    
+    // 检查是否达到冰冻阈值
+    if (enemy.iceValue >= 10 && !enemy.isFrozen) {
+      // 冰冻敌人
+      enemy.isFrozen = true;
+      enemy.frozenUntil = this.time.now + 2000; // 冰冻2秒
+      enemy.speed = 0; // 完全停止移动
+      
+      // 立即停止移动
+      const enemyBody = enemy.body as Phaser.Physics.Arcade.Body;
+      if (enemyBody) {
+        enemyBody.stop();
+        enemyBody.setVelocity(0, 0);
+        enemyBody.setAcceleration(0, 0);
+        enemyBody.moves = false; // 禁用物理body的移动
+      }
+      
+      // 视觉效果：冰蓝色闪烁
+      enemy.setTint(0x00ffff);
+      
+      // 添加冰冻特效
+      const freezeEffect = this.add.circle(enemy.x, enemy.y, 20, 0x00ffff, 0.5);
+      this.tweens.add({
+        targets: freezeEffect,
+        scale: { from: 0.5, to: 1.5 },
+        alpha: { from: 0.5, to: 0 },
+        duration: 500,
+        onComplete: () => {
+          if (freezeEffect.active) freezeEffect.destroy();
+        }
+      });
+      
+      // 重置寒冷值（冰冻后清零）
+      enemy.iceValue = 0;
+    } else if (!enemy.isFrozen) {
+      // 未冰冻但受到寒冷影响：根据寒冷值从0-10逐渐减速到0
+      // 减速比例：寒冷值/10，即0%到100%的减速
+      const slowPercent = enemy.iceValue / 10;
+      enemy.speed = enemy.originalSpeed * (1 - slowPercent);
+      
+      // 视觉效果：根据寒冷值调整蓝色色调强度
+      const tintIntensity = Math.floor((enemy.iceValue / 10) * 255);
+      enemy.setTint(Phaser.Display.Color.GetColor(255 - tintIntensity, 255 - tintIntensity, 255));
+    }
+  }
+  
+  // 更新冰冻状态（在update循环中调用）
+  updateFrozenEnemies(): void {
+    this.enemies.getChildren().forEach((enemy: any) => {
+      // 如果敌人被冰冻，强制停止移动
+      if (enemy.isFrozen) {
+        const enemyBody = enemy.body as Phaser.Physics.Arcade.Body;
+        if (enemyBody) {
+          enemyBody.stop();
+          enemyBody.setVelocity(0, 0);
+          enemyBody.setAcceleration(0, 0);
+          enemyBody.moves = false;
+        }
+      } else if (enemy.body) {
+        // 未冰冻时确保物理body可以移动
+        const enemyBody = enemy.body as Phaser.Physics.Arcade.Body;
+        if (enemyBody && enemyBody.moves === false) {
+          enemyBody.moves = true;
+        }
+      }
+      
+      // 检查是否需要解除冰冻
+      if (enemy.isFrozen && enemy.frozenUntil && this.time.now >= enemy.frozenUntil) {
+        // 解除冰冻
+        enemy.isFrozen = false;
+        enemy.speed = enemy.originalSpeed || enemy.enemyConfig?.speed || 50;
+        
+        // 重新启用物理body的移动
+        const enemyBody = enemy.body as Phaser.Physics.Arcade.Body;
+        if (enemyBody) {
+          enemyBody.moves = true;
+        }
+        
+        enemy.clearTint();
+        enemy.frozenUntil = undefined;
+        
+        // 获得5秒冰冷抗性
+        enemy.iceResistUntil = this.time.now + 5000;
+        enemy.iceValue = 0; // 清空寒冷值
+        
+        // 抗性期间显示淡红色边框表示免疫
+        enemy.setTint(0xffaaaa);
+        
+        // 5秒后恢复正常颜色
+        this.time.delayedCall(5000, () => {
+          if (enemy.active && !enemy.isFrozen && enemy.iceValue === 0) {
+            enemy.clearTint();
+          }
+        });
+      }
+    });
   }
 }

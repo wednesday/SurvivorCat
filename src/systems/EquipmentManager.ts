@@ -129,7 +129,7 @@ export class EquipmentManager {
       s.projectileSplit += effects.projectileSplit;
     }
 
-    // 轨道球属性
+    // 守护球属性
     if (effects.orbitalCount !== undefined) {
       s.orbitalCount += effects.orbitalCount;
     }
@@ -169,6 +169,26 @@ export class EquipmentManager {
     }
     if (effects.explosionRadius !== undefined) {
       s.explosionRadius += effects.explosionRadius;
+    }
+
+    // 毒性属性
+    if (effects.drug !== undefined) {
+      s.drug += effects.drug;
+    }
+    if (effects.drugSpread !== undefined) {
+      s.drugSpread += effects.drugSpread;
+    }
+    
+    // 寒冷属性
+    if (effects.ice !== undefined) {
+      s.ice += effects.ice;
+    }
+    
+    // spread 属性 - 直接应用到对应属性，不做条件判断
+    if (effects.spread !== undefined) {
+      s.orbitalRadius += effects.spread;
+      s.explosionRadius += effects.spread;
+      s.drugSpread += effects.spread;
     }
   }
 }

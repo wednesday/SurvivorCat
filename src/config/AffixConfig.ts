@@ -52,7 +52,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_fortitude",
     name: "坚韧的",
-    description: "+ 最大生命值",
+    description: "最大生命值+{value}",
     type: AffixType.Basic,
     baseEffects: { maxHP: 15 },
     weight: 10,
@@ -60,7 +60,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_swift",
     name: "迅捷的",
-    description: "+ 移动速度",
+    description: "移动速度+{value}",
     type: AffixType.Basic,
     baseEffects: { moveSpeed: 15 },
     weight: 10,
@@ -68,7 +68,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_power",
     name: "强力的",
-    description: "+ 子弹伤害",
+    description: "子弹伤害+{value}",
     type: AffixType.Basic,
     baseEffects: { projectileDamage: 1 },
     weight: 8,
@@ -76,7 +76,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_barrage",
     name: "弹幕之",
-    description: "+ 子弹数量",
+    description: "子弹数量+{value}",
     type: AffixType.Basic,
     baseEffects: { projectileCount: 1 },
     weight: 6,
@@ -84,7 +84,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_magnet",
     name: "磁力之",
-    description: "+ 拾取范围",
+    description: "拾取范围+{value}",
     type: AffixType.Basic,
     baseEffects: { pickupRange: 30 },
     weight: 6,
@@ -92,7 +92,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_sage",
     name: "贤者的",
-    description: "+ 经验获取",
+    description: "经验获取+{value}%",
     type: AffixType.Basic,
     baseEffects: { expGain: 0.1 },
     weight: 4,
@@ -100,15 +100,15 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_haste",
     name: "急速的",
-    description: "+ 攻击速度",
+    description: "攻击速度+{value}%",
     type: AffixType.Basic,
     baseEffects: { attackSpeed: 0.15 },
     weight: 8,
   },
   {
     id: "affix_bulletspeed",
-    name: "穿透的",
-    description: "+ 子弹速度",
+    name: "急速的",
+    description: "子弹速度+{value}%",
     type: AffixType.Basic,
     baseEffects: { projectileSpeed: 0.3 },
     weight: 7,
@@ -116,7 +116,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_experience_big",
     name: "学识之",
-    description: "+ 经验获取",
+    description: "经验获取+{value}%",
     type: AffixType.Basic,
     baseEffects: { expGain: 0.2 },
     weight: 2,
@@ -124,7 +124,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_hp_boost",
     name: "生命之",
-    description: "+ 最大生命值",
+    description: "最大生命值+{value}",
     type: AffixType.Basic,
     baseEffects: { maxHP: 30 },
     weight: 3,
@@ -134,7 +134,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_orbital_guard",
     name: "守护之",
-    description: "+ 轨道球",
+    description: "守护球+{value}",
     type: AffixType.Effect,
     baseEffects: { orbitalCount: 1 },
     weight: 6,
@@ -142,7 +142,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_orbital_strike",
     name: "打击之",
-    description: "+ 轨道伤害",
+    description: "轨道伤害+{value}",
     type: AffixType.Effect,
     baseEffects: { orbitalDamage: 2 },
     weight: 5,
@@ -150,7 +150,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_orbital_radius",
     name: "扩展之",
-    description: "+ 轨道半径",
+    description: "轨道半径+{value}",
     type: AffixType.Effect,
     baseEffects: { orbitalRadius: 20 },
     weight: 4,
@@ -158,23 +158,15 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_laser_focus",
     name: "聚焦之",
-    description: "+ 激光伤害",
+    description: "激光伤害+{value}",
     type: AffixType.Effect,
     baseEffects: { laserDamage: 1 },
     weight: 5,
   },
   {
-    id: "affix_laser_extender",
-    name: "延伸之",
-    description: "+ 激光持续时间",
-    type: AffixType.Effect,
-    baseEffects: { laserDuration: 300 },
-    weight: 4,
-  },
-  {
     id: "affix_shrapnel",
     name: "碎片之",
-    description: "+ 爆炸伤害",
+    description: "爆炸伤害+{value}",
     type: AffixType.Effect,
     baseEffects: { explosionDamage: 3 },
     weight: 5,
@@ -182,9 +174,33 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_boom",
     name: "爆裂之",
-    description: "+ 爆炸概率",
+    description: "爆炸概率+{value}%",
     type: AffixType.Effect,
     baseEffects: { explosionChance: 0.05 },
+    weight: 4,
+  },
+  {
+    id: "affix_effect_spreed",
+    name: "扩散之",
+    description: "效果范围+{value}",
+    type: AffixType.Effect,
+    baseEffects: { spread: 30 },
+    weight: 4,
+  },
+  {
+    id: "affix_drug_dmg",
+    name: "刺痛的",
+    description: "毒伤害+{value}",
+    type: AffixType.Effect,
+    baseEffects: { drug: 2 },
+    weight: 4,
+  },
+    {
+    id: "affix_ice_dmg",
+    name: "冰霜之",
+    description: "寒冷+{value}",
+    type: AffixType.Effect,
+    baseEffects: { ice: 3 },
     weight: 4,
   },
 
@@ -192,7 +208,7 @@ export const AFFIX_TEMPLATES: AffixTemplate[] = [
   {
     id: "affix_split",
     name: "分裂之",
-    description: "子弹分裂",
+    description: "子弹分裂+{value}",
     type: AffixType.Special,
     baseEffects: { projectileSplit: 2 },
     weight: 2,

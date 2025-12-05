@@ -110,6 +110,11 @@ export class SafeHouseScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-ESC', () => {
       this.returnToMenu();
     });
+    
+    // 注册全局刷新商店函数（用于 DevTools 调试）
+    (window as any).refreshShop = async () => {
+      await this.refreshShop();
+    };
   }
   
   createBackground() {
@@ -254,6 +259,37 @@ export class SafeHouseScene extends Phaser.Scene {
     await SaveManager.saveSafeHouseShop(shopData);
   }
   
+  /**
+   * 刷新商店（用于 DevTools 调试）
+   */
+  async refreshShop() {
+    console.log('开始刷新商店...');
+    
+    // 清空当前商店
+    this.equipmentShop = [];
+    
+    // 清空保存的商店数据
+    await SaveManager.clearSafeHouseShop();
+    
+    // 重新生成商店物品
+    await this.generateShopItems();
+    
+    // 销毁旧的商店容器
+    if (this.shopContainer) {
+      this.shopContainer.destroy();
+    }
+    
+    // 重新创建商店容器
+    this.createShopContainer();
+    
+    // 如果当前在装备标签页，显示新的商店
+    if (this.currentTab === 'equipment') {
+      this.showTab('equipment');
+    }
+    
+    console.log('商店刷新完成！');
+  }
+  
   calculateEquipmentPrice(quality: Rarity, affixes: AffixInstance[]): number {
     // 基础价格根据品质（使用对象映射而不是数组索引）
     const basePriceMap: Record<Rarity, number> = {
@@ -308,13 +344,10 @@ export class SafeHouseScene extends Phaser.Scene {
         // 范围类
         if (affix.values.pickupRange) effectValue += affix.values.pickupRange * 1;
         if (affix.values.orbitalRadius) effectValue += affix.values.orbitalRadius * 2;
-        if (affix.values.explosionRadius) effectValue += affix.values.explosionRadius * 3;
+        if (affix.values.spread) effectValue += affix.values.spread * 0.8;
         
         // 经验增益
         if (affix.values.expGain) effectValue += affix.values.expGain * 300;
-        
-        // 持续时间
-        if (affix.values.laserDuration) effectValue += affix.values.laserDuration * 0.2;
       }
       
       affixValue += rarityValue + effectValue;

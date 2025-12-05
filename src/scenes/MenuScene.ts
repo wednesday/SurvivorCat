@@ -114,6 +114,24 @@ export class MenuScene extends Phaser.Scene {
       frameHeight: 16
     });
     
+    // 预加载毒性子弹精灵图（绿色特效子弹）
+    this.load.spritesheet('poison-bullet-sheet', 'assets/bullet/Green_Effect_and_Bullet_16x16_mini.png', {
+      frameWidth: 16,
+      frameHeight: 16
+    });
+
+    // 预加载寒冷子弹精灵图（蓝色特效子弹）
+    this.load.spritesheet('ice-bullet-sheet', 'assets/bullet/Water_Effect_and_Bullet_16x16mini.png', {
+      frameWidth: 16,
+      frameHeight: 16
+    });
+
+    // 预加载融合子弹精灵图（紫色特效子弹）
+    this.load.spritesheet('fusion-bullet-sheet', 'assets/bullet/Purple_Effect_and_Bullet_16x16.png', {
+      frameWidth: 16,
+      frameHeight: 16
+    });
+    
     // 预加载音效
     this.load.audio('CrossbowShoot6', 'assets/audio/CrossbowShoot6.wav');
     this.load.audio('culverinshoot1', 'assets/audio/culverinshoot1.wav');
@@ -180,6 +198,19 @@ export class MenuScene extends Phaser.Scene {
       }
     );
     this.subtitleText.setOrigin(0.5);
+    
+    // 版本号（右下角）
+    const versionText = this.add.text(
+      this.cameras.main.width - 20,
+      this.cameras.main.height - 20,
+      'v0.0.13',
+      {
+        fontSize: '16px',
+        color: '#666666',
+        fontFamily: 'Arial'
+      }
+    );
+    versionText.setOrigin(1, 1);
     
     // 显示存档信息
     const hasSave = await SaveManager.hasSave();
@@ -293,6 +324,37 @@ export class MenuScene extends Phaser.Scene {
       
       inventoryButton.on('pointerdown', () => {
         this.openInventory();
+      });
+
+      // 测试场景按钮（左下角）
+      const testButton = this.add.text(
+        20,
+        this.cameras.main.height - 60,
+        '🎯 木桩',
+        {
+          fontSize: '20px',
+          color: '#888888',
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          backgroundColor: '#222222',
+          padding: { x: 15, y: 8 }
+        }
+      );
+      testButton.setOrigin(0, 0);
+      testButton.setInteractive({ useHandCursor: true });
+      
+      testButton.on('pointerover', () => {
+        testButton.setScale(1.1);
+        testButton.setStyle({ color: '#ffff00', backgroundColor: '#333333' });
+      });
+      
+      testButton.on('pointerout', () => {
+        testButton.setScale(1);
+        testButton.setStyle({ color: '#888888', backgroundColor: '#222222' });
+      });
+      
+      testButton.on('pointerdown', () => {
+        this.scene.start('TestScene');
       });
     } else {
       // 开始按钮（无存档时）

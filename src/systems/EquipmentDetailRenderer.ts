@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { getEquipmentById, EquipmentItem, calculateEquipmentSellPrice } from '../config/EquipmentConfig';
-import { AffixInstance, Rarity, getQualityColor, generateEquipmentName } from '../config/AffixConfig';
+import { AffixInstance, Rarity, getQualityColor, generateEquipmentName, getAffixTemplateById } from '../config/AffixConfig';
 
 export interface EquipmentDetailOptions {
   id: string;
@@ -43,9 +43,10 @@ export class EquipmentDetailRenderer {
 
     // 计算面板高度
     const baseHeight = 350;
+    const storyHeight = config.story ? 80 : 0; // 为故事预留空间
     const affixHeight = (options.affixes?.length || 0) * 25;
     const actionHeight = options.showActions ? 60 : 0;
-    const panelHeight = baseHeight + affixHeight + actionHeight;
+    const panelHeight = baseHeight + storyHeight + affixHeight + actionHeight;
     const panelWidth = 450;
 
     // 创建半透明遮罩
@@ -114,19 +115,21 @@ export class EquipmentDetailRenderer {
       this.container.add(desc);
     }
 
-    // 基础属性
-    let yOffset = -panelHeight / 2 + 150;
-    if (config.effects) {
-      const statsText = this.scene.add.text(-panelWidth / 2 + 30, yOffset, '基础属性:', {
-        fontSize: '18px',
-        color: '#4caf50',
+    // 装备故事
+    let yOffset = -panelHeight / 2 + 135;
+    if (config.story) {
+      const storyText = this.scene.add.text(-panelWidth / 2 + 30, yOffset, config.story, {
+        fontSize: '13px',
+        color: '#999999',
         fontFamily: 'Arial',
-        fontStyle: 'bold'
+        fontStyle: 'italic',
+        wordWrap: { width: panelWidth - 60, useAdvancedWrap: true },
+        lineSpacing: 3
       });
-      this.container.add(statsText);
-      yOffset += 25;
-
-      yOffset = this.renderEffects(config.effects, panelWidth, yOffset);
+      this.container.add(storyText);
+      yOffset += storyText.height + 15;
+    } else {
+      yOffset = -panelHeight / 2 + 150;
     }
 
     // 词条
@@ -143,8 +146,27 @@ export class EquipmentDetailRenderer {
 
       options.affixes.forEach(affix => {
         const rarityColor = this.getRarityColor([affix]);
-        const valStr = Object.entries(affix.values).map(([k, v]) => `${k}: ${v}`).join(', ');
-        const affixText = this.scene.add.text(-panelWidth / 2 + 40, yOffset, `• ${affix.name} (${valStr})`, {
+        const template = getAffixTemplateById(affix.id);
+        let affixDesc = affix.name;
+        
+        if (template && template.description) {
+          // 使用描述模板，将 {value} 替换为实际值
+          affixDesc = template.description;
+          // 获取第一个效果值
+          const firstValue = Object.values(affix.values)[0];
+          if (firstValue !== undefined) {
+            // 格式化值：如果是百分比（小于1的小数），转换为百分比显示
+            let displayValue: string;
+            if (Math.abs(firstValue) < 1 && firstValue !== 0) {
+              displayValue = `${Math.round(firstValue * 100)}`;
+            } else {
+              displayValue = String(firstValue);
+            }
+            affixDesc = affixDesc.replace('{value}', displayValue);
+          }
+        }
+        
+        const affixText = this.scene.add.text(-panelWidth / 2 + 40, yOffset, `• ${affixDesc}`, {
           fontSize: '15px',
           color: rarityColor,
           fontFamily: 'Arial'
@@ -219,27 +241,21 @@ export class EquipmentDetailRenderer {
       yOffset += 22;
     }
 
-    // 轨道球
+    // 守护球
     if (effects.orbitalCount) {
-      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.orbitalCount} 轨道球数量`, {
+      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.orbitalCount} 守护球数量`, {
         fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
       }));
       yOffset += 22;
     }
     if (effects.orbitalDamage) {
-      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.orbitalDamage} 轨道球伤害`, {
+      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.orbitalDamage} 守护球伤害`, {
         fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
       }));
       yOffset += 22;
     }
     if (effects.orbitalRadius) {
       this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.orbitalRadius} 轨道半径`, {
-        fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
-      }));
-      yOffset += 22;
-    }
-    if (effects.orbitalSpeed) {
-      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${Math.round(effects.orbitalSpeed * 100)}% 轨道速度`, {
         fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
       }));
       yOffset += 22;
@@ -254,12 +270,6 @@ export class EquipmentDetailRenderer {
     }
     if (effects.laserDamage) {
       this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.laserDamage} 激光伤害`, {
-        fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
-      }));
-      yOffset += 22;
-    }
-    if (effects.laserDuration) {
-      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.laserDuration}ms 激光持续时间`, {
         fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
       }));
       yOffset += 22;
@@ -284,9 +294,11 @@ export class EquipmentDetailRenderer {
       }));
       yOffset += 22;
     }
-    if (effects.explosionRadius) {
-      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.explosionRadius} 爆炸范围`, {
-        fontSize: '15px', color: '#ffffff', fontFamily: 'Arial'
+
+    // 效果范围
+    if (effects.spread) {
+      this.container!.add(this.scene.add.text(leftMargin, yOffset, `+ ${effects.spread} 效果范围`, {
+        fontSize: '15px', color: '#00ff00', fontFamily: 'Arial'
       }));
       yOffset += 22;
     }

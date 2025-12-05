@@ -26,21 +26,20 @@ export interface SkillConfig {
     attackSpeed?: number;          // 攻击速度加成（减少冷却时间）
     
     // 轨道类效果
-    orbitalCount?: number;         // 增加轨道球数量
-    orbitalDamage?: number;        // 增加轨道球伤害
-    orbitalRadius?: number;        // 改变轨道半径
-    orbitalSpeed?: number;         // 改变旋转速度
+    orbitalCount?: number;         // 增加守护球数量
+    orbitalDamage?: number;        // 增加守护球伤害
     
     // 射线类效果
     laserCount?: number;           // 增加激光数量
     laserDamage?: number;          // 增加激光伤害
-    laserDuration?: number;        // 增加激光持续时间
     laserInterval?: number;        // 减少激光冷却时间
     
     // 爆炸类效果
     explosionDamage?: number;      // 爆炸伤害
-    explosionRadius?: number;      // 爆炸范围
     explosionChance?: number;      // 爆炸触发概率
+    
+    // 效果范围
+    spread?: number;               // 效果扩散范围（轨道半径/爆炸范围/毒扩散等）
     
     // 属性增强
     moveSpeed?: number;            // 移动速度
@@ -48,6 +47,9 @@ export interface SkillConfig {
     hpRegen?: number;              // 生命恢复
     expGain?: number;              // 经验加成
     pickupRange?: number;          // 拾取范围
+    
+    // 毒性效果
+    drug?: number;                 // 毒性伤害等级
   };
 }
 
@@ -66,7 +68,7 @@ export const SKILL_CONFIGS: SkillConfig[] = [
   },
   {
     id: 'projectile_damage',
-    name: '穿甲弹',
+    name: '贫铀弹',
     description: '+1 子弹伤害',
     type: SkillType.PROJECTILE,
     color: '#ff4444',
@@ -100,8 +102,8 @@ export const SKILL_CONFIGS: SkillConfig[] = [
   // ========== 轨道类技能 ==========
   {
     id: 'orbital_add',
-    name: '轨道护盾',
-    description: '+1 轨道球',
+    name: '守护之球',
+    description: '+1 守护之球',
     type: SkillType.ORBITAL,
     color: '#ff00ff',
     effects: {
@@ -111,7 +113,7 @@ export const SKILL_CONFIGS: SkillConfig[] = [
   {
     id: 'orbital_damage',
     name: '能量球',
-    description: '+1 轨道球伤害',
+    description: '+1 守护之球伤害',
     type: SkillType.ORBITAL,
     color: '#ff44ff',
     effects: {
@@ -119,25 +121,14 @@ export const SKILL_CONFIGS: SkillConfig[] = [
     }
   },
   {
-    id: 'orbital_radius',
-    name: '扩展轨道',
-    description: '+20 轨道半径',
-    type: SkillType.ORBITAL,
-    color: '#cc00ff',
-    maxLevel: 3,
-    effects: {
-      orbitalRadius: 20
-    }
-  },
-  {
-    id: 'orbital_speed',
-    name: '高速旋转',
-    description: '+50% 轨道速度',
-    type: SkillType.ORBITAL,
+    id: 'spread_boost',
+    name: '效果范围',
+    description: '+20 效果范围',
+    type: SkillType.STAT,
     color: '#ff00cc',
     maxLevel: 3,
     effects: {
-      orbitalSpeed: 0.5
+      spread: 20
     }
   },
   
@@ -163,17 +154,6 @@ export const SKILL_CONFIGS: SkillConfig[] = [
     }
   },
   {
-    id: 'laser_duration',
-    name: '持久激光',
-    description: '+200ms 激光持续时间',
-    type: SkillType.LASER,
-    color: '#00ffdd',
-    maxLevel: 3,
-    effects: {
-      laserDuration: 200
-    }
-  },
-  {
     id: 'laser_interval',
     name: '快速充能',
     description: '-500ms 激光冷却',
@@ -194,17 +174,6 @@ export const SKILL_CONFIGS: SkillConfig[] = [
     color: '#ff4400',
     effects: {
       explosionDamage: 3
-    }
-  },
-  {
-    id: 'explosion_radius',
-    name: '扩大范围',
-    description: '+30 爆炸范围',
-    type: SkillType.EXPLOSION,
-    color: '#ff8844',
-    maxLevel: 3,
-    effects: {
-      explosionRadius: 30
     }
   },
   {

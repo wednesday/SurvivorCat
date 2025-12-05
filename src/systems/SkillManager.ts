@@ -15,10 +15,10 @@ export class SkillManager {
     projectileSplit: 0,        // 子弹分裂数量（基础0）
     
     // 轨道属性
-    orbitalCount: 0,           // 轨道球数量（基础0）
-    orbitalDamage: 1,          // 轨道球伤害（基础1）
+    orbitalCount: 0,           // 守护球数量（基础0）
+    orbitalDamage: 1,          // 守护球伤害（基础1）
     orbitalRadius: 100,        // 轨道半径（基础100）
-    orbitalSpeedMultiplier: 1, // 轨道速度倍数
+    orbitalSpeed: 0,           // 轨道速度（基础0）
     
     // 射线属性
     laserCount: 0,             // 激光数量（基础0）
@@ -36,7 +36,14 @@ export class SkillManager {
     moveSpeed: 200,            // 移动速度（基础200）
     maxHP: 100,                // 最大生命值（基础100）
     expGainMultiplier: 1,      // 经验获取倍数
-    pickupRange: 100           // 拾取范围（基础100）
+    pickupRange: 100,          // 拾取范围（基础100）
+    
+    // 毒性属性
+    drug: 0,                   // 毒性伤害等级（基础0）
+    drugSpread: 0,             // 毒性扩散范围（基础0）
+    
+    // 寒冷属性
+    ice: 0                     // 寒冷等级（基础0）
   };
   
   constructor() {}
@@ -63,7 +70,7 @@ export class SkillManager {
       orbitalCount: 0,
       orbitalDamage: 1,
       orbitalRadius: 100,
-      orbitalSpeedMultiplier: 1,
+      orbitalSpeed: 0,
 
       laserCount: 0,
       laserDamage: 1,
@@ -78,7 +85,12 @@ export class SkillManager {
       moveSpeed: 200,
       maxHP: 100,
       expGainMultiplier: 1,
-      pickupRange: 100
+      pickupRange: 100,
+      
+      drug: 0,
+      drugSpread: 0,
+      
+      ice: 0
     };
 
     // 重新应用已学技能的效果（根据 skillLevels）
@@ -105,11 +117,9 @@ export class SkillManager {
     if (e.orbitalCount !== undefined) this.stats.orbitalCount += e.orbitalCount;
     if (e.orbitalDamage !== undefined) this.stats.orbitalDamage += e.orbitalDamage;
     if (e.orbitalRadius !== undefined) this.stats.orbitalRadius += e.orbitalRadius;
-    if (e.orbitalSpeed !== undefined) this.stats.orbitalSpeedMultiplier += e.orbitalSpeed;
 
     if (e.laserCount !== undefined) this.stats.laserCount += e.laserCount;
     if (e.laserDamage !== undefined) this.stats.laserDamage += e.laserDamage;
-    if (e.laserDuration !== undefined) this.stats.laserDuration += e.laserDuration;
     if (e.laserInterval !== undefined) {
       this.stats.laserInterval += e.laserInterval;
       this.stats.laserInterval = Math.max(1000, this.stats.laserInterval);
@@ -121,12 +131,20 @@ export class SkillManager {
       this.stats.explosionChance = Math.min(1, this.stats.explosionChance);
     }
     if (e.explosionDamage !== undefined) this.stats.explosionDamage += e.explosionDamage;
-    if (e.explosionRadius !== undefined) this.stats.explosionRadius += e.explosionRadius;
 
     if (e.moveSpeed !== undefined) this.stats.moveSpeed += e.moveSpeed;
     if (e.maxHP !== undefined) this.stats.maxHP += e.maxHP;
     if (e.expGain !== undefined) this.stats.expGainMultiplier += e.expGain;
     if (e.pickupRange !== undefined) this.stats.pickupRange += e.pickupRange;
+    if (e.drug !== undefined) this.stats.drug += e.drug;
+    if (e.ice !== undefined) this.stats.ice += e.ice;
+    
+    // spread 属性应用到轨道半径、爆炸范围和毒扩散范围
+    if (e.spread !== undefined) {
+      if (this.stats.orbitalCount > 0) this.stats.orbitalRadius += e.spread;
+      if (this.stats.explosionEnabled) this.stats.explosionRadius += e.spread;
+      if (this.stats.drug > 0) this.stats.drugSpread += e.spread;
+    }
   }
   
   // 获取技能当前等级
@@ -159,7 +177,7 @@ export class SkillManager {
       orbitalCount: 0,
       orbitalDamage: 1,
       orbitalRadius: 100,
-      orbitalSpeedMultiplier: 1,
+      orbitalSpeed: 0,
       
       laserCount: 0,
       laserDamage: 1,
@@ -174,7 +192,12 @@ export class SkillManager {
       moveSpeed: 200,
       maxHP: 100,
       expGainMultiplier: 1,
-      pickupRange: 100
+      pickupRange: 100,
+      
+      drug: 0,
+      drugSpread: 0,
+      
+      ice: 0
     };
   }
   
@@ -189,7 +212,7 @@ export class SkillManager {
       lines.push(`子弹伤害: ${this.stats.projectileDamage}`);
     }
     if (this.stats.orbitalCount > 0) {
-      lines.push(`轨道球: ${this.stats.orbitalCount}`);
+      lines.push(`守护球: ${this.stats.orbitalCount}`);
     }
     if (this.stats.laserCount > 0) {
       lines.push(`激光: ${this.stats.laserCount}`);

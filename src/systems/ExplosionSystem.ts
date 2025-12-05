@@ -15,13 +15,26 @@ export class ExplosionSystem {
     damage: number,
     radius: number,
     enemies: Phaser.Physics.Arcade.Group,
-    onEnemyHit: (enemy: any, damage: number) => void
+    onEnemyHit: (enemy: any, damage: number) => void,
+    isPoisonExplosion: boolean = false,
+    iceLevel: number = 0,
+    onApplyIce?: (enemy: any, iceValue: number) => void,
+    isFusionExplosion: boolean = false
   ): void {
     // 爆炸音效
     this.scene.sound.play('culverinshoot1');
     
-    // 创建爆炸视觉效果 - 扩散的圆圈
-    const explosion = this.scene.add.circle(x, y, 10, 0xff6600, 0.8);
+    // 创建爆炸视觉效果 - 扩散的圆圈（融合爆炸为紫色，毒性爆炸为绿色，寒冰爆炸为蓝色）
+    const isIceExplosion = iceLevel > 0;
+    let explosionColor = 0xff6600; // 默认橙色
+    if (isFusionExplosion) {
+      explosionColor = 0x9900ff; // 融合紫色
+    } else if (isIceExplosion) {
+      explosionColor = 0x00ffff; // 寒冰蓝色
+    } else if (isPoisonExplosion) {
+      explosionColor = 0x00ff00; // 毒性绿色
+    }
+    const explosion = this.scene.add.circle(x, y, 10, explosionColor, 0.8);
     
     // 扩散动画
     this.scene.tweens.add({
@@ -34,7 +47,7 @@ export class ExplosionSystem {
     });
     
     // 添加粒子效果
-    this.createExplosionParticles(x, y, radius);
+    this.createExplosionParticles(x, y, radius, isPoisonExplosion, isIceExplosion, isFusionExplosion);
     
     // 屏幕震动
     this.scene.cameras.main.shake(100, 0.005);
@@ -53,6 +66,18 @@ export class ExplosionSystem {
         // 应用伤害
         onEnemyHit(enemy, finalDamage);
         
+        // 如果是寒冰爆炸，应用寒冷效果
+        if (iceLevel > 0 && onApplyIce) {
+          // 检查寒冷免疫
+          if (!enemy.enemyConfig?.immuneToCold) {
+            // 中心50%范围：全额寒冷值
+            // 外围50%范围：一半寒冷值
+            const innerRadius = radius * 0.5;
+            const iceValue = distance <= innerRadius ? iceLevel : Math.ceil(iceLevel / 2);
+            onApplyIce(enemy, iceValue);
+          }
+        }
+        
         // 击退效果
         const angle = Phaser.Math.Angle.Between(x, y, enemy.x, enemy.y);
         const knockbackForce = 200 * (1 - distance / radius);
@@ -65,10 +90,18 @@ export class ExplosionSystem {
           );
         }
         
-        // 爆炸命中效果（橙色闪烁）
+        // 爆炸命中效果（融合爆炸为紫色，毒性爆炸为绿色，寒冰爆炸为蓝色，普通爆炸为橙色闪烁）
+        let hitTint = 0xff6600; // 默认橙色
+        if (isFusionExplosion) {
+          hitTint = 0x9900ff; // 融合紫色
+        } else if (isIceExplosion) {
+          hitTint = 0x00ffff; // 寒冰蓝色
+        } else if (isPoisonExplosion) {
+          hitTint = 0x00ff00; // 毒性绿色
+        }
         this.scene.tweens.add({
           targets: enemy,
-          tint: 0xff6600,
+          tint: hitTint,
           duration: 150,
           yoyo: true,
           onComplete: () => {
@@ -82,8 +115,16 @@ export class ExplosionSystem {
   }
   
   // 创建爆炸粒子效果
-  private createExplosionParticles(x: number, y: number, radius: number): void {
+  private createExplosionParticles(x: number, y: number, radius: number, isPoisonExplosion: boolean = false, isIceExplosion: boolean = false, isFusionExplosion: boolean = false): void {
     const particleCount = 12;
+    let particleColor = 0xff8800; // 默认橙色
+    if (isFusionExplosion) {
+      particleColor = 0x9900ff; // 融合紫色
+    } else if (isIceExplosion) {
+      particleColor = 0x00ffff; // 寒冰蓝色
+    } else if (isPoisonExplosion) {
+      particleColor = 0x00ff00; // 毒性绿色
+    }
     
     for (let i = 0; i < particleCount; i++) {
       const angle = (Math.PI * 2 * i) / particleCount;
@@ -93,7 +134,7 @@ export class ExplosionSystem {
       const targetY = y + Math.sin(angle) * distance;
       
       // 创建粒子（小圆点）
-      const particle = this.scene.add.circle(x, y, 5, 0xff8800, 1);
+      const particle = this.scene.add.circle(x, y, 5, particleColor, 1);
       
       // 粒子飞出动画
       this.scene.tweens.add({

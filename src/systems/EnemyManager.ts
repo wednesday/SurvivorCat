@@ -17,6 +17,14 @@ export interface Enemy extends Phaser.GameObjects.Sprite {
   speed: number;
   expValue: number;
   laserHitThisFrame?: boolean;
+  
+  // 寒冷系统相关
+  iceValue?: number; // 当前寒冷值
+  isFrozen?: boolean; // 是否被冰冻
+  frozenUntil?: number; // 冰冻持续到的时间戳
+  originalSpeed?: number; // 原始速度（用于恢复）
+  iceResistUntil?: number; // 冰冷抗性持续到的时间戳
+  iceDecayTimer?: number; // 寒冷值衰减计时器
 }
 
 // 怪物管理器
@@ -297,6 +305,11 @@ export class EnemyManager {
     enemyExtended.speed = finalSpeed;
     enemyExtended.expValue = stats.expValue;
     
+    // 寒冷系统初始化
+    enemyExtended.iceValue = 0;
+    enemyExtended.isFrozen = false;
+    enemyExtended.originalSpeed = finalSpeed;
+    
     // 标记Boss和类型
     (enemyExtended as any).isBoss = config.isBoss;
     (enemyExtended as any).enemyType = config.type;
@@ -399,6 +412,18 @@ export class EnemyManager {
     
     this.enemyGroup.getChildren().forEach((enemy: any) => {
       if (!enemy || !enemy.active || !enemy.body) return;
+      
+      // 如果敌人被冰冻，完全停止移动
+      if (enemy.isFrozen) {
+        const enemyBody = enemy.body as Phaser.Physics.Arcade.Body;
+        if (enemyBody) {
+          enemyBody.setVelocity(0, 0);
+          enemyBody.setAcceleration(0, 0);
+          enemyBody.stop();
+        }
+        return;
+      }
+      
       // 如果敌人在被玩家碰撞后处于击退/冷却状态，跳过 AI 控制（避免覆盖击退速度）
       if ((enemy as any)._playerHitCooldown) {
         // console.log('Skipping AI for knocked back enemy');
