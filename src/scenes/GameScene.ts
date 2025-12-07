@@ -5,6 +5,7 @@ import { MapManager } from "../systems/MapManager";
 import { ExplosionSystem } from "../systems/ExplosionSystem";
 import { PoisonSystem } from "../systems/PoisonSystem";
 import { EnemyManager, Enemy } from "../systems/EnemyManager";
+import { PlayerSystem } from "../systems/PlayerSystem";
 import { getRandomSkills, SkillConfig } from "../config/SkillConfig";
 import { EQUIPMENT_CONFIGS, getEquipmentById } from '../config/EquipmentConfig';
 import { rollAffixes, AffixInstance, rollEquipmentQuality, Rarity, getQualityColor, generateEquipmentName } from '../config/AffixConfig';
@@ -23,8 +24,9 @@ export class GameScene extends Phaser.Scene {
   private treasureChests!: Phaser.Physics.Arcade.Group; // 宝箱
   private coins!: Phaser.Physics.Arcade.Group; // 金币
 
-  // 技能管理系统
+  // 系统管理
   private skillManager!: SkillManager;
+  private playerSystem!: PlayerSystem;
   private explosionSystem!: ExplosionSystem;
   private poisonSystem!: PoisonSystem;
   private enemyManager!: EnemyManager;
@@ -36,13 +38,6 @@ export class GameScene extends Phaser.Scene {
   private loadingBar: Phaser.GameObjects.Rectangle | null = null;
   private loadingBarBg: Phaser.GameObjects.Rectangle | null = null;
   private loadingText: Phaser.GameObjects.Text | null = null;
-
-  // 玩家基础属性
-  private playerHP = 100;
-  private playerLevel = 1;
-  private exp = 0;
-  private expToNextLevel = 10;
-  private isPlayerHurt = false; // 玩家受伤状态
 
   // 游戏定时器
   private projectileTimer = 0;
@@ -151,7 +146,6 @@ export class GameScene extends Phaser.Scene {
     // 显式重置所有游戏状态变量（scene.restart不会重新实例化类）
     this.isPaused = false;
     this.isUpgrading = false;
-    this.isPlayerHurt = false;
     this.isBossFight = false;
     this.currentMusic = 'normal';
     
@@ -160,8 +154,6 @@ export class GameScene extends Phaser.Scene {
     this.killCount = 0;
     this.coinsCollected = 0;
     this.bossesDefeated = 0;
-    this.playerLevel = 1;
-    this.exp = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
     this.difficultyLevel = 1;
@@ -263,10 +255,21 @@ export class GameScene extends Phaser.Scene {
     // 创建金币组
     this.coins = this.physics.add.group();
 
+    // 设置键盘输入（需要在PlayerSystem之前初始化）
+    this.cursors = this.input.keyboard!.createCursorKeys();
+
     // 初始化技能管理系统（每次create时都重新创建以确保状态干净）
     this.skillManager = new SkillManager();
     this.explosionSystem = new ExplosionSystem(this);
     this.poisonSystem = new PoisonSystem(this);
+
+    // 初始化玩家系统
+    this.playerSystem = new PlayerSystem(
+      this,
+      this.player,
+      this.skillManager,
+      this.cursors
+    );
 
     // 初始化敌人管理器（在enemies组创建之后，每次都重新创建）
     this.enemyManager = new EnemyManager(
@@ -282,10 +285,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyManager.setDifficulty(this.difficultyLevel);
 
     // 重置玩家状态
-    this.playerHP = this.skillManager.stats.maxHP;
-    this.playerLevel = 1;
-    this.exp = 0;
-    this.expToNextLevel = 8;
+    this.playerSystem.reset();
     this.killCount = 0;
     this.coinsCollected = 0;
     this.bossesDefeated = 0;
@@ -370,9 +370,6 @@ export class GameScene extends Phaser.Scene {
 
     // 守护球与敌人的碰撞检测（将在update中手动检测）
 
-    // 设置键盘输入
-    this.cursors = this.input.keyboard!.createCursorKeys();
-
     // 添加暂停键监听（ESC 或 P）
     this.input.keyboard!.on("keydown-ESC", this.togglePause, this);
     this.input.keyboard!.on("keydown-P", this.togglePause, this);
@@ -388,7 +385,7 @@ export class GameScene extends Phaser.Scene {
     // 同步守护球数量
     this.syncOrbitalCount();
     // 确保玩家当前生命值基于装备和技能的最大生命值
-    this.playerHP = this.skillManager.stats.maxHP;
+    this.playerSystem.setHP(this.playerSystem.getMaxHP());
     
     // 初始化无限地图管理器
     this.mapManager = new MapManager(this, CUSTOM_DECORATION_CONFIG);
@@ -593,14 +590,14 @@ export class GameScene extends Phaser.Scene {
     this.hpText = this.add.text(
       10,
       10,
-      `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`,
+      `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`,
       style
     );
-    this.levelText = this.add.text(10, 35, `Level: ${this.playerLevel}`, style);
+    this.levelText = this.add.text(10, 35, `Level: ${this.playerSystem.getLevel()}`, style);
     this.expText = this.add.text(
       10,
       60,
-      `EXP: ${this.exp}/${this.expToNextLevel}`,
+      `EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`,
       style
     );
     this.timeText = this.add.text(10, 85, `Time: 0:00`, style);
@@ -1810,16 +1807,19 @@ export class GameScene extends Phaser.Scene {
     }
     (enemy as any)._playerHitCooldown = true;
     
+    // 计算击退角度
+    const dx = enemy.x - player.x;
+    const dy = enemy.y - player.y;
+    const knockbackAngle = Math.atan2(dy, dx) + Math.PI; // 反向击退
+    
     // 对玩家造成伤害并更新 UI（使用怪物的实际伤害值）
     const enemyDamage = (enemy as any).damage || 10;
-    this.playerHP -= enemyDamage;
-    this.hpText.setText(`HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`);
+    this.playerSystem.takeDamage(enemyDamage, knockbackAngle);
+    this.hpText.setText(`HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`);
 
     // 对敌人施加向外击退 - 直接改变位置而不是速度
     const body = enemy.body as Phaser.Physics.Arcade.Body;
     if (body) {
-      const dx = enemy.x - player.x;
-      const dy = enemy.y - player.y;
       const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
       
       // 计算击退距离（像素）- 调整为更合理的距离
@@ -1841,30 +1841,7 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // 设置受伤状态
-    this.isPlayerHurt = true;
-
-    // 播放蹲下动画（受伤效果）
-    this.player.play("cat-ducking-anim");
-
-    // 动画结束后恢复到idle并清除受伤状态
-    this.player.once("animationcomplete", () => {
-      this.isPlayerHurt = false;
-      if (this.player.active && this.playerHP > 0) {
-        this.player.play("cat-idle-anim");
-      }
-    });
-
-    // 玩家受伤闪烁
-    this.tweens.add({
-      targets: this.player,
-      alpha: 0.5,
-      duration: 100,
-      yoyo: true,
-      repeat: 3,
-    });
-
-    if (this.playerHP <= 0) {
+    if (this.playerSystem.isDead()) {
       this.gameOver();
     }
   }
@@ -1874,35 +1851,12 @@ export class GameScene extends Phaser.Scene {
     const damage = (projectile as any).damage || 5;
     projectile.destroy();
     
-    this.playerHP -= damage;
+    this.playerSystem.takeDamage(damage);
     this.hpText.setText(
-      `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`
+      `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
     );
 
-    // 设置受伤状态
-    this.isPlayerHurt = true;
-
-    // 播放蹲下动画（受伤效果）
-    this.player.play("cat-ducking-anim");
-
-    // 动画结束后恢复到idle并清除受伤状态
-    this.player.once("animationcomplete", () => {
-      this.isPlayerHurt = false;
-      if (this.player.active && this.playerHP > 0) {
-        this.player.play("cat-idle-anim");
-      }
-    });
-
-    // 玩家受伤闪烁
-    this.tweens.add({
-      targets: this.player,
-      alpha: 0.5,
-      duration: 100,
-      yoyo: true,
-      repeat: 3,
-    });
-
-    if (this.playerHP <= 0) {
+    if (this.playerSystem.isDead()) {
       this.gameOver();
     }
   }
@@ -2038,10 +1992,10 @@ export class GameScene extends Phaser.Scene {
     const expGained = Math.ceil(
       orb.expValue * this.skillManager.stats.expGainMultiplier * diffConfig.expMultiplier
     );
-    this.exp += expGained;
-    this.expText.setText(`EXP: ${this.exp}/${this.expToNextLevel}`);
+    const didLevelUp = this.playerSystem.addExp(expGained);
+    this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
 
-    if (this.exp >= this.expToNextLevel) {
+    if (didLevelUp) {
       this.levelUp();
     }
   }
@@ -2157,11 +2111,11 @@ export class GameScene extends Phaser.Scene {
           ease: "Power2",
           onComplete: () => {
             if (orb.active && this.scene.isActive()) {
-              this.exp += orb.expValue;
-              this.expText.setText(`EXP: ${this.exp}/${this.expToNextLevel}`);
+              const didLevelUp = this.playerSystem.addExp(orb.expValue);
+              this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
               orb.destroy();
 
-              if (this.exp >= this.expToNextLevel) {
+              if (didLevelUp) {
                 this.levelUp();
               }
             }
@@ -3533,25 +3487,9 @@ export class GameScene extends Phaser.Scene {
     if (this.isUpgrading) {
       return;
     }
-    
-    this.playerLevel++;
-    this.exp = 0;
-    this.expToNextLevel = Math.floor(this.expToNextLevel * 1.2);
 
-    this.levelText.setText(`Level: ${this.playerLevel}`);
-    this.expText.setText(`EXP: ${this.exp}/${this.expToNextLevel}`);
-
-    // 升级效果
-    const circle = this.add.circle(this.player.x, this.player.y, 10, 0xffff00);
-    this.tweens.add({
-      targets: circle,
-      scale: 10,
-      alpha: 0,
-      duration: 500,
-      onComplete: () => {
-        if (circle.active) circle.destroy();
-      },
-    });
+    this.levelText.setText(`Level: ${this.playerSystem.getLevel()}`);
+    this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
 
     // 暂停游戏并显示升级选项
     this.physics.pause();
@@ -3564,7 +3502,7 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     
     // 判断是否是第一次升级（玩家等级为2时）
-    const isFirstUpgrade = this.playerLevel === 2;
+    const isFirstUpgrade = this.playerSystem.getLevel() === 2;
     
     // 创建半透明背景
     const overlay = this.add.rectangle(
@@ -3582,7 +3520,7 @@ export class GameScene extends Phaser.Scene {
     const title = this.add.text(
       this.cameras.main.centerX,
       this.cameras.main.centerY - 150,
-      `LEVEL UP! (${this.playerLevel})`,
+      `LEVEL UP! (${this.playerSystem.getLevel()})`,
       {
         fontSize: "48px",
         color: "#ffff00",
@@ -3779,9 +3717,8 @@ export class GameScene extends Phaser.Scene {
         if (!this.scene.isActive()) return;
 
         // 再次升级
-        this.playerLevel++;
-        this.expToNextLevel = Math.floor(this.expToNextLevel * 1.5);
-        this.levelText.setText(`Level: ${this.playerLevel}`);
+        this.playerSystem.setLevel(this.playerSystem.getLevel() + 1);
+        this.levelText.setText(`Level: ${this.playerSystem.getLevel()}`);
 
         // 升级特效（紫色）
         const circle = this.add.circle(
@@ -3961,16 +3898,16 @@ export class GameScene extends Phaser.Scene {
 
     // 特殊处理 - 生命恢复
     if (skill.effects?.hpRegen) {
-      this.playerHP = this.skillManager.stats.maxHP;
+      this.playerSystem.setHP(this.playerSystem.getMaxHP());
       this.hpText.setText(
-        `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`
+        `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
       );
     }
 
     // 如果增加了最大生命值，更新状态面板显示
     if (skill.effects?.maxHP) {
       this.hpText.setText(
-        `HP: ${this.playerHP}/${this.skillManager.stats.maxHP}`
+        `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
       );
     }
 
@@ -4092,8 +4029,6 @@ export class GameScene extends Phaser.Scene {
     this.killCount = 0;
     this.coinsCollected = 0;
     this.bossesDefeated = 0;
-    this.playerLevel = 1;
-    this.exp = 0;
     this.bonusLevelCount = 0;
     this.bonusLevelChain = 0;
     this.rerollsRemaining = 2;
@@ -4262,7 +4197,7 @@ export class GameScene extends Phaser.Scene {
       centerY - 80,
       `⏱️ Time: ${minutes}:${seconds.toString().padStart(2, "0")}\n\n` +
       `⚔️ Kills: ${this.killCount}\n\n` +
-      `📊 Level: ${this.playerLevel}\n\n` +
+      `📊 Level: ${this.playerSystem.getLevel()}\n\n` +
       `💰 Coins: ${this.coinsCollected}\n\n` +
       `🎲 Bonus Levels: ${this.bonusLevelCount}`,
       {
@@ -4698,7 +4633,7 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.centerY - 50,
       `Time: ${minutes}:${seconds.toString().padStart(2, "0")}\nKills: ${
         this.killCount
-      }\nLevel: ${this.playerLevel}\nCoins: ${
+      }\nLevel: ${this.playerSystem.getLevel()}\nCoins: ${
         this.coinsCollected
       } 💰\nBonus Levels: ${this.bonusLevelCount} 🎲`,
       {
@@ -4885,58 +4820,8 @@ export class GameScene extends Phaser.Scene {
     // 检查玩家是否存在
     if (!this.player || !this.player.body) return;
 
-    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
-
-    // 玩家移动（WASD 或方向键）
-    let velocityX = 0;
-    let velocityY = 0;
-
-    if (this.cursors.left.isDown || this.input.keyboard!.addKey("A").isDown) {
-      velocityX = -this.skillManager.stats.moveSpeed;
-    } else if (
-      this.cursors.right.isDown ||
-      this.input.keyboard!.addKey("D").isDown
-    ) {
-      velocityX = this.skillManager.stats.moveSpeed;
-    }
-
-    if (this.cursors.up.isDown || this.input.keyboard!.addKey("W").isDown) {
-      velocityY = -this.skillManager.stats.moveSpeed;
-    } else if (
-      this.cursors.down.isDown ||
-      this.input.keyboard!.addKey("S").isDown
-    ) {
-      velocityY = this.skillManager.stats.moveSpeed;
-    }
-
-    // 对角线移动速度标准化
-    if (velocityX !== 0 && velocityY !== 0) {
-      velocityX *= 0.707;
-      velocityY *= 0.707;
-    }
-
-    playerBody.setVelocity(velocityX, velocityY);
-
-    // 更新玩家动画和方向（受伤时不更新）
-    if (!this.isPlayerHurt) {
-      if (velocityX !== 0 || velocityY !== 0) {
-        // 移动时播放走路动画
-        if (this.player.anims.currentAnim?.key !== "cat-walk-anim") {
-          this.player.play("cat-walk-anim");
-        }
-        // 根据移动方向翻转精灵
-        if (velocityX < 0) {
-          this.player.setFlipX(true); // 向左翻转
-        } else if (velocityX > 0) {
-          this.player.setFlipX(false); // 向右不翻转
-        }
-      } else {
-        // 静止时播放idle动画
-        if (this.player.anims.currentAnim?.key !== "cat-idle-anim") {
-          this.player.play("cat-idle-anim");
-        }
-      }
-    }
+    // 更新玩家系统（移动和动画）
+    this.playerSystem.update();
 
     // 摄像机跟随玩家
     this.cameras.main.centerOn(this.player.x, this.player.y);
