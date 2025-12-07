@@ -184,6 +184,21 @@ export class EquipmentManager {
       s.ice += effects.ice;
     }
     
+    // 火焰属性
+    if (effects.fire !== undefined) {
+      s.fire += effects.fire;
+    }
+    
+    // 风属性
+    if (effects.wind !== undefined) {
+      s.wind += effects.wind;
+    }
+    
+    // 斥力属性（守护球被扔出）
+    if (effects.repulsion !== undefined) {
+      s.repulsion = effects.repulsion || s.repulsion;
+    }
+    
     // spread 属性 - 直接应用到对应属性，不做条件判断
     if (effects.spread !== undefined) {
       s.orbitalRadius += effects.spread;

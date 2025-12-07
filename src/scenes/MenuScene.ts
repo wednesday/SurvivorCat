@@ -131,6 +131,18 @@ export class MenuScene extends Phaser.Scene {
       frameWidth: 16,
       frameHeight: 16
     });
+    this.load.spritesheet('fire-bullet-sheet', 'assets/bullet/Fire_03_01_all.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('wind-bullet-sheet', 'assets/bullet/Fire_03_04.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('fire-wind-bullet-sheet', 'assets/bullet/Fire_03_06_all.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
     
     // 预加载音效
     this.load.audio('CrossbowShoot6', 'assets/audio/CrossbowShoot6.wav');
@@ -541,7 +553,6 @@ export class MenuScene extends Phaser.Scene {
     // 获取已解锁的难度
     const unlockedDifficulties = await SaveManager.getUnlockedDifficulties();
     const allDifficulties = getAllDifficulties();
-    console.log(unlockedDifficulties)
     // 添加选项
     allDifficulties.forEach(diff => {
       const option = document.createElement('option');
@@ -569,8 +580,6 @@ export class MenuScene extends Phaser.Scene {
     // 添加到DOM
     if (this.difficultySelect) {
       document.body.appendChild(this.difficultySelect);
-      console.log('Difficulty select added to DOM:', this.difficultySelect);
-      console.log('Unlocked difficulties:', unlockedDifficulties);
     
       // 监听变化
       this.difficultySelect.addEventListener('change', (e) => {

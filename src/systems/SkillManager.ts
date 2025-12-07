@@ -43,7 +43,16 @@ export class SkillManager {
     drugSpread: 0,             // 毒性扩散范围（基础0）
     
     // 寒冷属性
-    ice: 0                     // 寒冷等级（基础0）
+    ice: 0,                    // 寒冷等级（基础0）
+    
+    // 火焰属性
+    fire: 0,                   // 火焰等级（基础0）
+    
+    // 风属性
+    wind: 0,                   // 风属性等级（基础0）
+    
+    // 斥力属性（守护球扔出）
+    repulsion: false           // 守护球是否被扔出（基础false）
   };
   
   constructor() {}
@@ -90,7 +99,13 @@ export class SkillManager {
       drug: 0,
       drugSpread: 0,
       
-      ice: 0
+      ice: 0,
+      
+      fire: 0,
+      
+      wind: 0,
+      
+      repulsion: false
     };
 
     // 重新应用已学技能的效果（根据 skillLevels）
@@ -138,6 +153,8 @@ export class SkillManager {
     if (e.pickupRange !== undefined) this.stats.pickupRange += e.pickupRange;
     if (e.drug !== undefined) this.stats.drug += e.drug;
     if (e.ice !== undefined) this.stats.ice += e.ice;
+    if (e.fire !== undefined) this.stats.fire += e.fire;
+    if (e.wind !== undefined) this.stats.wind += e.wind;
     
     // spread 属性应用到轨道半径、爆炸范围和毒扩散范围
     if (e.spread !== undefined) {
@@ -197,7 +214,13 @@ export class SkillManager {
       drug: 0,
       drugSpread: 0,
       
-      ice: 0
+      ice: 0,
+      
+      fire: 0,
+      
+      wind: 0,
+      
+      repulsion: false
     };
   }
   

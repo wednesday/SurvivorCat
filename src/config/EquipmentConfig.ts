@@ -42,6 +42,11 @@ export interface EquipmentEffects {
   // 可以随时扩展
   drug?: number; // 子弹毒性等级
   ice?: number;  // 子弹寒冷等级
+
+  fire?: number; // 魔法火焰等级
+  wind?: number; // 风属性等级
+
+  repulsion?: boolean; // 守护球被扔出去（仅戒指）
 }
 
 export interface EquipmentItem {
@@ -98,6 +103,16 @@ export const EQUIPMENT_CONFIGS: EquipmentItem[] = [
     }
   },
   {
+    id: 'ring_of_repulsion',
+    name: '抗拒者戒指',
+    description: '守护之球会被扔出去',
+    story: "这枚戒指散发着一股奇异的力量，佩戴者能够感受到周围空间的扭曲。传说它曾属于一位强大的法师，他利用戒指的力量驱散了无数敌人，但最终也被这股力量吞噬。",
+    slot: 'ring',
+    effects: {
+      repulsion: true
+    }
+  },
+  {
     id: 'amulet_of_vigor',
     name: '活力项链',
     description: '+20 最大生命值',
@@ -118,6 +133,16 @@ export const EQUIPMENT_CONFIGS: EquipmentItem[] = [
     }
   },
   {
+    id: 'fire_leather_armor',
+    name: '焰甲',
+    description: '+1 守护火焰等级',
+    story: "这件皮甲散发着淡淡的火焰气息，仿佛能感受到它内部燃烧的热量。传说它是由一位火焰祭司穿戴，他在一次仪式中献祭了自己，以换取永恒的守护之力。",
+    slot: 'cloth',
+    effects: {
+      fire: 1
+    }
+  },
+  {
     id: 'amulet_of_splitting',
     name: '分裂项链',
     description: '子弹分裂成2个',
@@ -125,6 +150,16 @@ export const EQUIPMENT_CONFIGS: EquipmentItem[] = [
     slot: 'necklace',
     effects: {
       projectileSplit: 2
+    }
+  },
+  {
+    id: 'amulet_of_wind',
+    name: '风之力',
+    description: '+1 风属性等级',
+    story: "这条项链据说蕴含着风神的力量，佩戴者能够感受到风的轻抚与怒吼。传说一位冒险者在暴风雨中获得了它，从此他能驾驭风的力量，穿越任何障碍。",
+    slot: 'necklace',
+    effects: {
+      wind: 1
     }
   }
 ];
@@ -149,10 +184,10 @@ export function calculateEquipmentPrice(quality: Rarity, affixes: AffixInstance[
     [Rarity.Legendary]: 400
   };
   const basePrice = basePriceMap[quality] ?? 50;
-  
+
   // 计算词条价值
   let affixValue = 0;
-  
+
   for (const affix of affixes) {
     // 词条稀有度基础价值
     const rarityValueMap: Record<Rarity, number> = {
@@ -162,51 +197,51 @@ export function calculateEquipmentPrice(quality: Rarity, affixes: AffixInstance[
       [Rarity.Legendary]: 200
     };
     const rarityValue = rarityValueMap[affix.rarity] ?? 20;
-    
+
     // 根据词条效果计算额外价值
     let effectValue = 0;
     if (affix.values) {
       // 生命值类
       if (affix.values.maxHP) effectValue += affix.values.maxHP * 2;
-      
+
       // 移动速度
       if (affix.values.moveSpeed) effectValue += affix.values.moveSpeed * 1.5;
-      
+
       // 伤害类
       if (affix.values.projectileDamage) effectValue += affix.values.projectileDamage * 10;
       if (affix.values.orbitalDamage) effectValue += affix.values.orbitalDamage * 8;
       if (affix.values.laserDamage) effectValue += affix.values.laserDamage * 8;
       if (affix.values.explosionDamage) effectValue += affix.values.explosionDamage * 5;
-      
+
       // 数量类
       if (affix.values.projectileCount) effectValue += affix.values.projectileCount * 30;
       if (affix.values.orbitalCount) effectValue += affix.values.orbitalCount * 40;
       if (affix.values.laserCount) effectValue += affix.values.laserCount * 35;
-      
+
       // 速度/倍率类
       if (affix.values.attackSpeed) effectValue += affix.values.attackSpeed * 15;
       if (affix.values.projectileSpeed) effectValue += (affix.values.projectileSpeed || 0) * 100;
-      
+
       // 范围类
       if (affix.values.pickupRange) effectValue += affix.values.pickupRange * 0.5;
       if (affix.values.orbitalRadius) effectValue += affix.values.orbitalRadius * 0.3;
       if (affix.values.spread) effectValue += affix.values.spread * 0.8;
-      
+
       // 特殊效果
       if (affix.values.projectileSplit) effectValue += affix.values.projectileSplit * 50;
       if (affix.values.explosionChance) effectValue += (affix.values.explosionChance || 0) * 200;
       if (affix.values.expGain) effectValue += (affix.values.expGain || 0) * 100;
-      
+
       // 毒性效果
       if (affix.values.drug) effectValue += affix.values.drug * 8;
-      
+
       // 寒冷效果
       if (affix.values.ice) effectValue += affix.values.ice * 8;
     }
-    
+
     affixValue += rarityValue + effectValue;
   }
-  
+
   return Math.round(basePrice + affixValue);
 }
 

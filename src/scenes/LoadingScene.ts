@@ -231,6 +231,26 @@ export class LoadingScene extends Phaser.Scene {
       frameWidth: 16,
       frameHeight: 16
     });
+    this.load.spritesheet('poison-bullet-sheet', 'assets/bullet/Fire_03_04.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('ice-bullet-sheet', 'assets/bullet/Fire_03_02.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('fire-bullet-sheet', 'assets/bullet/Fire_03_01_all.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('wind-bullet-sheet', 'assets/bullet/Fire_03_04.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
+    this.load.spritesheet('fire-wind-bullet-sheet', 'assets/bullet/Fire_03_06_all.png', {
+      frameWidth: 32,
+      frameHeight: 32
+    });
     
     // 预加载音效（使用实际存在的音效文件）
     this.load.audio('CrossbowShoot6', 'assets/audio/CrossbowShoot6.wav');

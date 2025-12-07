@@ -52,6 +52,25 @@ export class GameScene extends Phaser.Scene {
   private orbitals: Phaser.GameObjects.Sprite[] = [];
   private orbitalRotation = 0;
   private orbitalSpeedBase = 0.05; // 基础旋转速度
+  private fireOrbitalIndices = new Set<number>(); // 记录哪些轨道球是火焰类型
+  private windOrbitalIndices = new Set<number>(); // 记录哪些轨道球是风属性类型
+  private fusionOrbitalIndices = new Set<number>(); // 记录哪些轨道球是火风融合类型
+  
+  // 斥力系统（扔出守护球）
+  private thrownOrbitals = new Map<number, {
+    targetX: number;
+    targetY: number;
+    isReturning: boolean;
+    throwTime: number;
+    centerX: number;
+    centerY: number;
+    localRotation: number;
+    hasReachedTarget: boolean;
+    returnedTime?: number; // 返回到玩家的时间
+    returnStartTime?: number; // 开始返回的时间
+    returnStartX?: number; // 开始返回时的X坐标
+    returnStartY?: number; // 开始返回时的Y坐标
+  }>();
 
   // 激光系统
   private lasers: Array<{
@@ -283,6 +302,10 @@ export class GameScene extends Phaser.Scene {
     // 清空守护球
     this.orbitals = [];
     this.orbitalRotation = 0;
+    this.fireOrbitalIndices.clear();
+    this.windOrbitalIndices.clear();
+    this.fusionOrbitalIndices.clear();
+    this.thrownOrbitals.clear();
 
     // 清空激光
     this.lasers = [];
@@ -1495,8 +1518,28 @@ export class GameScene extends Phaser.Scene {
               enemyBody.moves = false;
             }
             
-            // 冰冻视觉效果
-            hitEnemy.setTint(0x00ffff);
+            // 冰冻视觉效果 - 使用粒子（参考燃烧效果）
+            const freezeParticles = this.add.particles(hitEnemy.x, hitEnemy.y, 'ice-bullet-sheet', {
+              frame: [0, 1, 2, 3],
+              lifespan: 500,
+              speed: { min: 20, max: 40 },
+              scale: { start: 0.3, end: 0 },
+              blendMode: 'ADD',
+              emitting: false
+            });
+            hitEnemy.freezeParticles = freezeParticles;
+            
+            // 定期爆发冰冻粒子效果
+            hitEnemy.freezeParticleEvent = this.time.addEvent({
+              delay: 500,
+              loop: true,
+              callback: () => {
+                if (hitEnemy.active && hitEnemy.isFrozen && freezeParticles.active) {
+                  freezeParticles.setPosition(hitEnemy.x, hitEnemy.y);
+                  freezeParticles.explode(3);
+                }
+              }
+            });
             
             const freezeEffect = this.add.circle(hitEnemy.x, hitEnemy.y, 20, 0x00ffff, 0.5);
             this.tweens.add({
@@ -1512,7 +1555,14 @@ export class GameScene extends Phaser.Scene {
             // 未达到冰冻阈值，消耗寒冷值
             hitEnemy.iceValue = 0;
             hitEnemy.speed = hitEnemy.originalSpeed || hitEnemy.speed;
-            hitEnemy.clearTint();
+            if (hitEnemy.freezeParticles) {
+              hitEnemy.freezeParticles.destroy();
+              hitEnemy.freezeParticles = null;
+            }
+            if (hitEnemy.freezeParticleEvent) {
+              hitEnemy.freezeParticleEvent.remove();
+              hitEnemy.freezeParticleEvent = null;
+            }
           }
         });
         
@@ -1690,17 +1740,19 @@ export class GameScene extends Phaser.Scene {
     // 显示伤害数字
     this.showDamageText(enemy.x, enemy.y - 20, damage);
 
-    // 激光命中效果（青色闪烁）
-    this.tweens.add({
-      targets: enemy,
+    // 激光命中效果 - 使用粒子
+    const laserHitParticles = this.add.particles(enemy.x, enemy.y, 'bullet-sheet', {
+      frame: [0, 1, 2],
+      lifespan: 300,
+      speed: { min: 20, max: 40 },
+      scale: { start: 0.3, end: 0 },
       tint: 0x00ffff,
-      duration: 100,
-      yoyo: true,
-      onComplete: () => {
-        if (enemy.active) {
-          enemy.clearTint();
-        }
-      },
+      blendMode: 'ADD',
+      emitting: false
+    });
+    laserHitParticles.explode(8);
+    this.time.delayedCall(400, () => {
+      laserHitParticles.destroy();
     });
 
     if (enemy.hp <= 0) {
@@ -1781,14 +1833,10 @@ export class GameScene extends Phaser.Scene {
       // 同时设置速度为0，防止AI立即覆盖
       body.setVelocity(0, 0);
       
-      // 添加视觉反馈 - 怪物变红表示被击退
-      enemy.setTint(0xff6666);
-      
       // 500ms后恢复AI控制
       this.time.delayedCall(500, () => {
         if (enemy.active) {
           (enemy as any)._playerHitCooldown = false;
-          enemy.clearTint();
         }
       });
     }
@@ -2598,7 +2646,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  showDamageText(x: number, y: number, damage: number, color: string = '#ff4444') {
+  showDamageText(x: number, y: number, damage: number, color: string = '#fff') {
     // 四舍五入到1位小数
     const displayDamage = Math.round(damage * 10) / 10;
     const damageText = this.add.text(x, y, `-${displayDamage}`, {
@@ -2623,39 +2671,148 @@ export class GameScene extends Phaser.Scene {
   }
 
   addOrbital() {
-    // 创建守护球（使用第2行子弹，帧5-9）
-    const orbital = this.add.sprite(0, 0, 'bullet-sheet', 5);
-    orbital.setScale(1.8);
+    // 判断是否应该创建特殊守护球
+    const useFire = this.skillManager.stats.fire > 0;
+    const useWind = this.skillManager.stats.wind > 0;
+    const useFusion = useFire && useWind; // 火风融合
     
-    // 创建守护球动画（第2行的5帧）
-    const orbitalAnimKey = 'bullet-type2-anim';
-    if (!this.anims.exists(orbitalAnimKey)) {
-      this.anims.create({
-        key: orbitalAnimKey,
-        frames: this.anims.generateFrameNumbers('bullet-sheet', {
-          start: 5, // 第2行第1帧
-          end: 9    // 第2行第5帧
-        }),
-        frameRate: 10,
-        repeat: -1
+    if (useFusion) {
+      // 创建火风融合守护球
+      const orbital = this.add.sprite(0, 0, 'fire-wind-bullet-sheet', 0);
+      orbital.setScale(1.5);
+      
+      // 创建火风融合守护球动画（8帧）
+      const fusionOrbitalAnimKey = 'fire-wind-orbital-anim';
+      if (!this.anims.exists(fusionOrbitalAnimKey)) {
+        this.anims.create({
+          key: fusionOrbitalAnimKey,
+          frames: this.anims.generateFrameNumbers('fire-wind-bullet-sheet', {
+            start: 0,
+            end: 7
+          }),
+          frameRate: 12,
+          repeat: -1
+        });
+      }
+      orbital.play(fusionOrbitalAnimKey);
+      
+      this.physics.add.existing(orbital);
+      (orbital.body as Phaser.Physics.Arcade.Body).setCircle(16);
+      
+      this.orbitals.push(orbital);
+      this.fusionOrbitalIndices.add(this.orbitals.length - 1);
+      
+      // 添加特殊发光效果
+      this.tweens.add({
+        targets: orbital,
+        alpha: 0.95,
+        duration: 180,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else if (useFire) {
+      // 创建火焰守护球（使用32x32的火焰贴图）
+      const orbital = this.add.sprite(0, 0, 'fire-bullet-sheet', 0);
+      orbital.setScale(1.5);
+      
+      // 创建火焰守护球动画（8帧）
+      const fireOrbitalAnimKey = 'fire-orbital-anim';
+      if (!this.anims.exists(fireOrbitalAnimKey)) {
+        this.anims.create({
+          key: fireOrbitalAnimKey,
+          frames: this.anims.generateFrameNumbers('fire-bullet-sheet', {
+            start: 0,
+            end: 7
+          }),
+          frameRate: 12,
+          repeat: -1
+        });
+      }
+      orbital.play(fireOrbitalAnimKey);
+      
+      this.physics.add.existing(orbital);
+      (orbital.body as Phaser.Physics.Arcade.Body).setCircle(16);
+      
+      this.orbitals.push(orbital);
+      this.fireOrbitalIndices.add(this.orbitals.length - 1);
+      
+      // 添加火焰发光效果
+      this.tweens.add({
+        targets: orbital,
+        alpha: 0.9,
+        duration: 200,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else if (useWind) {
+      // 创建风属性守护球
+      const orbital = this.add.sprite(0, 0, 'wind-bullet-sheet', 0);
+      orbital.setScale(1.5);
+      
+      // 创建风守护球动画（8帧）
+      const windOrbitalAnimKey = 'wind-orbital-anim';
+      if (!this.anims.exists(windOrbitalAnimKey)) {
+        this.anims.create({
+          key: windOrbitalAnimKey,
+          frames: this.anims.generateFrameNumbers('wind-bullet-sheet', {
+            start: 0,
+            end: 7
+          }),
+          frameRate: 12,
+          repeat: -1
+        });
+      }
+      orbital.play(windOrbitalAnimKey);
+      
+      this.physics.add.existing(orbital);
+      (orbital.body as Phaser.Physics.Arcade.Body).setCircle(16);
+      
+      this.orbitals.push(orbital);
+      this.windOrbitalIndices.add(this.orbitals.length - 1);
+      
+      // 添加发光效果
+      this.tweens.add({
+        targets: orbital,
+        alpha: 0.85,
+        duration: 250,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      // 创建普通守护球（使用第2行子弹，帧5-9）
+      const orbital = this.add.sprite(0, 0, 'bullet-sheet', 5);
+      orbital.setScale(1.8);
+      
+      // 创建守护球动画（第2行的5帧）
+      const orbitalAnimKey = 'bullet-type2-anim';
+      if (!this.anims.exists(orbitalAnimKey)) {
+        this.anims.create({
+          key: orbitalAnimKey,
+          frames: this.anims.generateFrameNumbers('bullet-sheet', {
+            start: 5, // 第2行第1帧
+            end: 9    // 第2行第5帧
+          }),
+          frameRate: 10,
+          repeat: -1
+        });
+      }
+      orbital.play(orbitalAnimKey);
+      orbital.setScale(1.8); // 放大1.8倍
+      
+      this.physics.add.existing(orbital);
+      (orbital.body as Phaser.Physics.Arcade.Body).setCircle(12);
+
+      this.orbitals.push(orbital);
+
+      // 添加发光效果
+      this.tweens.add({
+        targets: orbital,
+        alpha: 0.8,
+        duration: 300,
+        yoyo: true,
+        repeat: -1,
       });
     }
-    orbital.play(orbitalAnimKey);
-    orbital.setScale(1.8); // 放大1.8倍
-    
-    this.physics.add.existing(orbital);
-    (orbital.body as Phaser.Physics.Arcade.Body).setCircle(12);
-
-    this.orbitals.push(orbital);
-
-    // 添加发光效果
-    this.tweens.add({
-      targets: orbital,
-      alpha: 0.8,
-      duration: 300,
-      yoyo: true,
-      repeat: -1,
-    });
   }
 
   // 同步守护球数量与 skillManager.stats.orbitalCount
@@ -2665,8 +2822,42 @@ export class GameScene extends Phaser.Scene {
 
     if (currentCount < targetCount) {
       // 需要添加守护球
+      const repulsionMode = this.skillManager.stats.repulsion;
+      
       for (let i = currentCount; i < targetCount; i++) {
         this.addOrbital();
+        
+        // 如果是斥力模式，新守护球应该加入已有的扔出状态
+        if (repulsionMode && this.thrownOrbitals.size > 0) {
+          // 找到第一个已扔出的守护球，复制其状态
+          const firstThrown = this.thrownOrbitals.values().next().value;
+          if (firstThrown) {
+            const newIndex = this.orbitals.length - 1;
+            const newAngle = (Math.PI * 2 * newIndex) / this.orbitals.length;
+            
+            this.thrownOrbitals.set(newIndex, {
+              targetX: firstThrown.targetX,
+              targetY: firstThrown.targetY,
+              isReturning: firstThrown.isReturning,
+              throwTime: firstThrown.throwTime,
+              centerX: firstThrown.centerX,
+              centerY: firstThrown.centerY,
+              localRotation: newAngle,
+              hasReachedTarget: firstThrown.hasReachedTarget,
+              returnedTime: firstThrown.returnedTime,
+              returnStartTime: firstThrown.returnStartTime,
+              returnStartX: firstThrown.returnStartX,
+              returnStartY: firstThrown.returnStartY
+            });
+          }
+        }
+      }
+      
+      // 添加完成后，如果是斥力模式，重新分配所有守护球的角度
+      if (repulsionMode && this.thrownOrbitals.size > 0) {
+        this.thrownOrbitals.forEach((state, index) => {
+          state.localRotation = (Math.PI * 2 * index) / this.orbitals.length;
+        });
       }
     } else if (currentCount > targetCount) {
       // 需要移除守护球
@@ -2674,7 +2865,16 @@ export class GameScene extends Phaser.Scene {
         const orbital = this.orbitals.pop();
         if (orbital) {
           orbital.destroy();
+          // 同时移除对应的扔出状态
+          this.thrownOrbitals.delete(i - 1);
         }
+      }
+      
+      // 移除完成后，如果是斥力模式，重新分配剩余守护球的角度
+      if (this.skillManager.stats.repulsion && this.thrownOrbitals.size > 0) {
+        this.thrownOrbitals.forEach((state, index) => {
+          state.localRotation = (Math.PI * 2 * index) / this.orbitals.length;
+        });
       }
     }
   }
@@ -2682,6 +2882,20 @@ export class GameScene extends Phaser.Scene {
   updateOrbitals() {
     if (this.orbitals.length === 0) return;
 
+    // 检查是否启用斥力模式
+    const repulsionMode = this.skillManager.stats.repulsion;
+
+    if (repulsionMode) {
+      // 斥力模式：守护球被扔向最近的敌人
+      this.updateRepulsionOrbitals();
+    } else {
+      // 正常模式：守护球围绕玩家旋转
+      this.updateNormalOrbitals();
+    }
+  }
+
+  // 正常模式：守护球围绕玩家旋转
+  private updateNormalOrbitals() {
     // 更新轨道旋转
     this.orbitalRotation +=
       this.orbitalSpeedBase + this.skillManager.stats.orbitalSpeed * 0.001;
@@ -2710,18 +2924,419 @@ export class GameScene extends Phaser.Scene {
           enemy.y
         );
 
+        // 初始化敌人的轨道球碰撞记录
+        if (!enemy.orbitalHits) {
+          enemy.orbitalHits = new Set<number>();
+        }
+
         if (distance < 20) {
-          this.hitEnemyWithOrbital(orbital, enemy);
+          // 如果这个轨道球还没有击中过这个敌人
+          if (!enemy.orbitalHits.has(index)) {
+            enemy.orbitalHits.add(index);
+            // 检查是否为特殊轨道球
+            const isFusion = this.fusionOrbitalIndices.has(index);
+            const isFire = this.fireOrbitalIndices.has(index);
+            const isWind = this.windOrbitalIndices.has(index);
+            this.hitEnemyWithOrbital(orbital, enemy, isFire, isWind, isFusion);
+          }
+        } else {
+          // 当轨道球离开敌人范围时，清除碰撞记录，允许下次碰撞
+          enemy.orbitalHits.delete(index);
         }
       });
     });
   }
 
-  hitEnemyWithOrbital(orbital: any, enemy: any) {
+  // 斥力模式：守护球被扔向最近的敌人
+  private updateRepulsionOrbitals() {
+    const throwSpeed = 150; // 中心移动速度
+    const throwDistance = 400; // 扔出距离
+    const throwCooldown = 1000; // 停留时间（毫秒）
+
+    this.orbitals.forEach((orbital, index) => {
+      if (!orbital || !orbital.active) return;
+
+      const thrownState = this.thrownOrbitals.get(index);
+
+      if (!thrownState) {
+        // 守护球未被扔出，寻找最近的敌人并扔出
+        const nearestEnemy = this.findNearestEnemy(this.player.x, this.player.y);
+        
+        if (nearestEnemy) {
+          // 计算扔出方向（朝向最近敌人）
+          const angle = Phaser.Math.Angle.Between(
+            this.player.x,
+            this.player.y,
+            nearestEnemy.x,
+            nearestEnemy.y
+          );
+          
+          // 计算固定距离的目标点
+          const targetX = this.player.x + Math.cos(angle) * throwDistance;
+          const targetY = this.player.y + Math.sin(angle) * throwDistance;
+          
+          // 扔出守护球，初始中心在玩家位置
+          const initialAngle = (Math.PI * 2 * index) / this.orbitals.length + this.orbitalRotation;
+          this.thrownOrbitals.set(index, {
+            targetX: targetX,
+            targetY: targetY,
+            isReturning: false,
+            throwTime: this.time.now,
+            centerX: this.player.x,
+            centerY: this.player.y,
+            localRotation: initialAngle,
+            hasReachedTarget: false
+          });
+        } else {
+          // 没有敌人，保持在玩家周围
+          const angle = (Math.PI * 2 * index) / this.orbitals.length + this.orbitalRotation;
+          const x = this.player.x + Math.cos(angle) * this.skillManager.stats.orbitalRadius;
+          const y = this.player.y + Math.sin(angle) * this.skillManager.stats.orbitalRadius;
+          orbital.setPosition(x, y);
+        }
+      } else {
+        // 守护球已被扔出
+        if (thrownState.isReturning) {
+          // 记录开始返回的时间和位置
+          if (!thrownState.returnStartTime) {
+            thrownState.returnStartTime = this.time.now;
+            thrownState.returnStartX = thrownState.centerX;
+            thrownState.returnStartY = thrownState.centerY;
+          }
+          
+          const returnDuration = 2000; // 2秒内返回
+          const elapsed = this.time.now - thrownState.returnStartTime;
+          const progress = Math.min(elapsed / returnDuration, 1); // 0到1的进度
+          
+          if (progress >= 1) {
+            // 返回完成，记录返回时间，等待0.5秒后再重新扔出
+            if (!thrownState.returnedTime) {
+              thrownState.returnedTime = this.time.now;
+            }
+            
+            // 等待期间，中心位置持续跟随玩家
+            thrownState.centerX = this.player.x;
+            thrownState.centerY = this.player.y;
+            
+            if (this.time.now - thrownState.returnedTime > 500) {
+              // 已等待0.5秒，清除状态以便重新扔出
+              this.thrownOrbitals.delete(index);
+            }
+          } else {
+            // 使用缓动函数进行插值（ease-out效果）
+            const easeProgress = 1 - Math.pow(1 - progress, 3); // cubic ease-out
+            
+            // 从起始位置插值到玩家当前位置
+            thrownState.centerX = thrownState.returnStartX! + (this.player.x - thrownState.returnStartX!) * easeProgress;
+            thrownState.centerY = thrownState.returnStartY! + (this.player.y - thrownState.returnStartY!) * easeProgress;
+          }
+        } else {
+          // 向目标点移动
+          if (!thrownState.hasReachedTarget) {
+            // 中心向目标点移动
+            const distToTarget = Phaser.Math.Distance.Between(
+              thrownState.centerX,
+              thrownState.centerY,
+              thrownState.targetX,
+              thrownState.targetY
+            );
+
+            if (distToTarget < 20) {
+              // 已到达目标点，开始停留
+              thrownState.hasReachedTarget = true;
+              thrownState.throwTime = this.time.now; // 重置计时器，开始停留倒计时
+            } else {
+              // 中心继续向目标点移动
+              const angle = Phaser.Math.Angle.Between(
+                thrownState.centerX,
+                thrownState.centerY,
+                thrownState.targetX,
+                thrownState.targetY
+              );
+              const speed = throwSpeed * 0.016; // 假设60fps
+              thrownState.centerX += Math.cos(angle) * speed;
+              thrownState.centerY += Math.sin(angle) * speed;
+            }
+          } else {
+            // 已到达目标点，检查是否该返回
+            if (this.time.now - thrownState.throwTime > throwCooldown) {
+              thrownState.isReturning = true;
+            }
+          }
+        }
+
+        // 无论在哪个状态，守护球都围绕中心旋转
+        thrownState.localRotation += this.orbitalSpeedBase + this.skillManager.stats.orbitalSpeed * 0.001;
+        orbital.x = thrownState.centerX + Math.cos(thrownState.localRotation) * this.skillManager.stats.orbitalRadius;
+        orbital.y = thrownState.centerY + Math.sin(thrownState.localRotation) * this.skillManager.stats.orbitalRadius;
+
+        // 检测与附近敌人的碰撞（在所有状态下都检测）
+        this.enemies.getChildren().forEach((enemy: any) => {
+          if (!enemy || !enemy.active) return;
+
+          const distOrbitalToEnemy = Phaser.Math.Distance.Between(
+            orbital.x,
+            orbital.y,
+            enemy.x,
+            enemy.y
+          );
+          
+          if (distOrbitalToEnemy < 50) {
+            if (!enemy.orbitalHits) {
+              enemy.orbitalHits = new Set<number>();
+            }
+            if (!enemy.orbitalHits.has(index)) {
+              enemy.orbitalHits.add(index);
+              const isFusion = this.fusionOrbitalIndices.has(index);
+              const isFire = this.fireOrbitalIndices.has(index);
+              const isWind = this.windOrbitalIndices.has(index);
+              // 在斥力模式下传递轨道中心坐标
+              this.hitEnemyWithOrbital(orbital, enemy, isFire, isWind, isFusion, thrownState.centerX, thrownState.centerY);
+            }
+          } else {
+            if (enemy.orbitalHits) {
+              enemy.orbitalHits.delete(index);
+            }
+          }
+        });
+      }
+    });
+  }
+
+  // 寻找最近的敌人
+  private findNearestEnemy(x: number, y: number): any {
+    let nearestEnemy: any = null;
+    let nearestDistance = Infinity;
+
+    this.enemies.getChildren().forEach((enemy: any) => {
+      if (!enemy || !enemy.active) return;
+
+      const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestEnemy = enemy;
+      }
+    });
+
+    return nearestEnemy;
+  }
+
+  hitEnemyWithOrbital(orbital: any, enemy: any, isFire: boolean = false, isWind: boolean = false, isFusion: boolean = false, orbitalCenterX?: number, orbitalCenterY?: number) {
     if (!enemy || !enemy.active) return;
 
     const damage = this.skillManager.stats.orbitalDamage;
     enemy.hp -= damage;
+    
+    // 显示伤害数字
+    this.showDamageText(enemy.x, enemy.y - 20, damage);
+    
+    // 判断是否为斥力模式（有轨道中心坐标）
+    const isRepulsionMode = orbitalCenterX !== undefined && orbitalCenterY !== undefined;
+    
+    // 如果是火风融合轨道球，应用特殊效果
+    if (isFusion) {
+      // 应用击退效果
+      const now = this.time.now;
+      const lastKnockback = enemy.lastKnockbackTime || 0;
+      const knockbackCooldown = 3000;
+      
+      if (now - lastKnockback >= knockbackCooldown) {
+        enemy.lastKnockbackTime = now;
+        
+        // 斥力模式下向轨道中心拉，否则从玩家中心向外推
+        let angle: number;
+        let knockbackDistance: number;
+        let targetX: number;
+        let targetY: number;
+        
+        if (isRepulsionMode) {
+          // 斥力+火风融合：向轨道中心拉
+          angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, orbitalCenterX!, orbitalCenterY!);
+          knockbackDistance = 20 + (this.skillManager.stats.wind * 30);
+          targetX = enemy.x + Math.cos(angle) * knockbackDistance;
+          targetY = enemy.y + Math.sin(angle) * knockbackDistance;
+        } else {
+          // 普通火风融合：从玩家中心向外推
+          angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+          knockbackDistance = 20 + (this.skillManager.stats.wind * 30);
+          targetX = enemy.x + Math.cos(angle) * knockbackDistance;
+          targetY = enemy.y + Math.sin(angle) * knockbackDistance;
+        }
+        
+        this.tweens.add({
+          targets: enemy,
+          x: targetX,
+          y: targetY,
+          duration: 300,
+          ease: 'Cubic.easeOut'
+        });
+      }
+      
+      // 应用传染性燃烧效果
+      if (!enemy.isBurning) {
+        this.applyContagiousBurn(enemy);
+      }
+      
+      return; // 融合效果已处理，直接返回
+    }
+    
+    // 如果是风属性轨道球，应用击退效果
+    if (isWind && this.skillManager.stats.wind > 0) {
+      // 检查是否可以被击退（5秒冷却）
+      const now = this.time.now;
+      const lastKnockback = enemy.lastKnockbackTime || 0;
+      const knockbackCooldown = 3000; // 5秒冷却
+      
+      if (now - lastKnockback >= knockbackCooldown) {
+        enemy.lastKnockbackTime = now;
+        
+        // 当斥力模式+风属性时，向轨道中心拉；否则从玩家中心向外推
+        let angle: number;
+        let knockbackDistance: number;
+        let targetX: number;
+        let targetY: number;
+        
+        if (isRepulsionMode) {
+          // 斥力+风模式：向轨道中心拉
+          angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, orbitalCenterX!, orbitalCenterY!);
+          knockbackDistance = 20 + (this.skillManager.stats.wind * 30); // 基础20 + 风等级*30
+          targetX = enemy.x + Math.cos(angle) * knockbackDistance;
+          targetY = enemy.y + Math.sin(angle) * knockbackDistance;
+        } else {
+          // 普通风模式：从玩家中心向外推
+          angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+          knockbackDistance = 20 + (this.skillManager.stats.wind * 30); // 基础20 + 风等级*30
+          targetX = enemy.x + Math.cos(angle) * knockbackDistance;
+          targetY = enemy.y + Math.sin(angle) * knockbackDistance;
+        }
+        
+        // 创建击退动画
+        this.tweens.add({
+          targets: enemy,
+          x: targetX,
+          y: targetY,
+          duration: 300,
+          ease: 'Cubic.easeOut',
+          onComplete: () => {
+            // 击退完成后添加视觉反馈
+          }
+        });
+        
+        // 添加风效果粒子
+        const windParticles = this.add.particles(enemy.x, enemy.y, 'wind-bullet-sheet', {
+          frame: [0, 1, 2, 3],
+          lifespan: 400,
+          speed: { min: 50, max: 100 },
+          scale: { start: 0.3, end: 0 },
+          angle: { min: Phaser.Math.RadToDeg(angle) - 30, max: Phaser.Math.RadToDeg(angle) + 30 },
+          blendMode: 'ADD',
+          emitting: false
+        });
+        windParticles.explode(8);
+        
+        // 清理粒子
+        this.time.delayedCall(500, () => {
+          windParticles.destroy();
+        });
+      }
+    }
+    
+    // 如果是火焰轨道球，应用燃烧效果
+    if (isFire && this.skillManager.stats.fire > 0) {
+      const burnDuration = 3000; // 燃烧持续3秒
+      const burnTicks = 6; // 燃烧6次
+      const burnDamagePerTick = this.skillManager.stats.fire; // 每次燃烧伤害
+      
+      // 添加燃烧标记和视觉效果
+      if (!enemy.isBurning) {
+        enemy.isBurning = true;
+        
+        // 创建燃烧粒子效果
+        const burnParticles = this.add.particles(enemy.x, enemy.y, 'fire-bullet-sheet', {
+          frame: [0, 1, 2, 3],
+          lifespan: 500,
+          speed: { min: 20, max: 40 },
+          scale: { start: 0.3, end: 0 },
+          gravityY: -50,
+          blendMode: 'ADD',
+          emitting: false
+        });
+        
+        // 定期造成燃烧伤害
+        let tickCount = 0;
+        const burnInterval = this.time.addEvent({
+          delay: burnDuration / burnTicks,
+          callback: () => {
+            if (enemy && enemy.active && tickCount < burnTicks) {
+              enemy.hp -= burnDamagePerTick;
+              this.showDamageText(enemy.x, enemy.y - 30, burnDamagePerTick, '#ff6600');
+              
+              // 更新粒子位置
+              burnParticles.setPosition(enemy.x, enemy.y);
+              burnParticles.explode(3);
+              
+              tickCount++;
+              
+              // 检查敌人是否死亡
+              if (enemy.hp <= 0) {
+                burnInterval.remove();
+                burnParticles.destroy();
+                
+                // 处理敌人死亡，掉落经验和金币
+                const expValue = (enemy as any).expValue || 1;
+                const isBoss = (enemy as any).enemyConfig?.isBoss || false;
+                
+                if (isBoss && !(enemy as any).dropped) {
+                  // Boss死亡处理
+                  (enemy as any).dropped = true;
+                  
+                  // 切换回普通音乐
+                  this.switchToNormalMusic();
+                  
+                  const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+                  const quality = rollEquipmentQuality(this.gameDifficulty);
+                  const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+                  this.spawnTreasureChest(enemy.x, enemy.y, { id: chosen.id, affixes, quality });
+                  
+                  // Boss掉落更多金币
+                  this.spawnCoin(enemy.x + 20, enemy.y, 10);
+                  this.spawnCoin(enemy.x - 20, enemy.y, 10);
+                  
+                  // 标记为已击败Boss并检查通关条件
+                  this.bossesDefeated++;
+                  if (this.bossesDefeated >= 4) {
+                    enemy.destroy();
+                    this.killCount++;
+                    this.gameVictory();
+                    return;
+                  }
+                } else if (!isBoss) {
+                  this.spawnExpOrb(enemy.x, enemy.y, expValue);
+                  if (Math.random() < 0.3) {
+                    this.spawnCoin(enemy.x, enemy.y, 1);
+                  }
+                  // 1%概率掉落磁力收集物
+                  if (Math.random() < 0.01) {
+                    this.spawnMagnetItem(enemy.x, enemy.y);
+                  }
+                }
+                
+                enemy.destroy();
+                this.killCount++;
+              }
+            } else {
+              // 燃烧结束，清除效果
+              if (enemy && enemy.active) {
+                enemy.isBurning = false;
+              }
+              burnParticles.destroy();
+              burnInterval.remove();
+            }
+          },
+          loop: true
+        });
+      }
+    }
     
     // 显示伤害数字
     this.showDamageText(enemy.x, enemy.y - 20, damage);
@@ -2774,12 +3389,143 @@ export class GameScene extends Phaser.Scene {
         if (Math.random() < 0.3) {
           this.spawnCoin(enemy.x, enemy.y, 1);
         }
+
+        // 1%概率掉落磁力收集物
+        if (Math.random() < 0.01) {
+          this.spawnMagnetItem(enemy.x, enemy.y);
+        }
       }
 
       enemy.destroy();
       this.killCount++;
       this.killText.setText(`Kills: ${this.killCount}`);
     }
+  }
+
+  // 传染性燃烧效果（火风融合）
+  applyContagiousBurn(sourceEnemy: any) {
+    if (!sourceEnemy || !sourceEnemy.active) return;
+    
+    sourceEnemy.isBurning = true;
+    sourceEnemy.setTint(0xff8800); // 融合燃烧使用橙黄色
+    
+    const burnDuration = 3000;
+    const burnTicks = 6;
+    const burnDamagePerTick = this.skillManager.stats.fire;
+    const contagionRadius = 80; // 传染半径
+    
+    // 创建融合燃烧粒子效果
+    const burnParticles = this.add.particles(sourceEnemy.x, sourceEnemy.y, 'fire-wind-bullet-sheet', {
+      frame: [0, 1, 2, 3],
+      lifespan: 500,
+      speed: { min: 20, max: 40 },
+      scale: { start: 0.3, end: 0 },
+      gravityY: -50,
+      blendMode: 'ADD',
+      emitting: false
+    });
+    
+    let tickCount = 0;
+    const burnInterval = this.time.addEvent({
+      delay: burnDuration / burnTicks,
+      callback: () => {
+        if (sourceEnemy && sourceEnemy.active && tickCount < burnTicks) {
+          sourceEnemy.hp -= burnDamagePerTick;
+          this.showDamageText(sourceEnemy.x, sourceEnemy.y - 30, burnDamagePerTick, '#ff8800');
+          
+          // 更新粒子位置
+          burnParticles.setPosition(sourceEnemy.x, sourceEnemy.y);
+          burnParticles.explode(3);
+          
+          // 每次tick时检查周围敌人，传染燃烧
+          if (tickCount === 0 || tickCount === 3) { // 在第0和第3次tick时传染
+            this.enemies.getChildren().forEach((nearbyEnemy: any) => {
+              if (!nearbyEnemy || !nearbyEnemy.active || nearbyEnemy === sourceEnemy) return;
+              if (nearbyEnemy.isBurning) return; // 已经在燃烧的不再传染
+              
+              const distance = Phaser.Math.Distance.Between(
+                sourceEnemy.x, sourceEnemy.y,
+                nearbyEnemy.x, nearbyEnemy.y
+              );
+              
+              if (distance <= contagionRadius) {
+                // 传染燃烧（递归调用，但已燃烧的会被跳过）
+                this.applyContagiousBurn(nearbyEnemy);
+                
+                // 显示传染视觉效果
+                const contagionLine = this.add.graphics();
+                contagionLine.lineStyle(2, 0xff8800, 0.8);
+                contagionLine.lineBetween(sourceEnemy.x, sourceEnemy.y, nearbyEnemy.x, nearbyEnemy.y);
+                this.tweens.add({
+                  targets: contagionLine,
+                  alpha: 0,
+                  duration: 300,
+                  onComplete: () => contagionLine.destroy()
+                });
+              }
+            });
+          }
+          
+          tickCount++;
+          
+          // 检查敌人是否死亡
+          if (sourceEnemy.hp <= 0) {
+            burnInterval.remove();
+            burnParticles.destroy();
+            
+            const expValue = (sourceEnemy as any).expValue || 1;
+            const isBoss = (sourceEnemy as any).enemyConfig?.isBoss || false;
+            
+            if (isBoss && !(sourceEnemy as any).dropped) {
+              // Boss死亡处理
+              (sourceEnemy as any).dropped = true;
+              
+              // 切换回普通音乐
+              this.switchToNormalMusic();
+              
+              const chosen = EQUIPMENT_CONFIGS[Math.floor(Math.random() * EQUIPMENT_CONFIGS.length)];
+              const quality = rollEquipmentQuality(this.gameDifficulty);
+              const affixes: AffixInstance[] = rollAffixes(chosen.slot as any, quality);
+              this.spawnTreasureChest(sourceEnemy.x, sourceEnemy.y, { id: chosen.id, affixes, quality });
+              
+              // Boss掉落更多金币
+              this.spawnCoin(sourceEnemy.x + 20, sourceEnemy.y, 10);
+              this.spawnCoin(sourceEnemy.x - 20, sourceEnemy.y, 10);
+              
+              // 标记为已击败Boss并检查通关条件
+              this.bossesDefeated++;
+              if (this.bossesDefeated >= 4) {
+                sourceEnemy.destroy();
+                this.killCount++;
+                this.gameVictory();
+                return;
+              }
+            } else if (!isBoss) {
+              this.spawnExpOrb(sourceEnemy.x, sourceEnemy.y, expValue);
+              if (Math.random() < 0.3) {
+                this.spawnCoin(sourceEnemy.x, sourceEnemy.y, 1);
+              }
+              // 1%概率掉落磁力收集物
+              if (Math.random() < 0.01) {
+                this.spawnMagnetItem(sourceEnemy.x, sourceEnemy.y);
+              }
+            }
+            
+            sourceEnemy.destroy();
+            this.killCount++;
+          }
+        } else {
+          // 燃烧结束，清除效果
+          if (sourceEnemy && sourceEnemy.active) {
+            sourceEnemy.isBurning = false;
+            sourceEnemy.clearTint();
+          }
+          burnParticles.destroy();
+          burnInterval.remove();
+        }
+      },
+      loop: true
+    });
   }
 
   levelUp() {
@@ -3295,6 +4041,10 @@ export class GameScene extends Phaser.Scene {
         }
       });
       this.orbitals = [];
+      this.fireOrbitalIndices.clear();
+      this.windOrbitalIndices.clear();
+      this.fusionOrbitalIndices.clear();
+      this.thrownOrbitals.clear();
     }
     
     // 清理激光
@@ -4570,8 +5320,28 @@ export class GameScene extends Phaser.Scene {
         enemyBody.moves = false; // 禁用物理body的移动
       }
       
-      // 视觉效果：冰蓝色闪烁
-      enemy.setTint(0x00ffff);
+      // 视觉效果：冰蓝色粒子（参考燃烧效果）
+      const freezeParticles = this.add.particles(enemy.x, enemy.y, 'ice-bullet-sheet', {
+        frame: [0, 1, 2, 3],
+        lifespan: 500,
+        speed: { min: 20, max: 40 },
+        scale: { start: 0.3, end: 0 },
+        blendMode: 'ADD',
+        emitting: false
+      });
+      enemy.freezeParticles = freezeParticles;
+      
+      // 定期爆发冰冻粒子效果
+      enemy.freezeParticleEvent = this.time.addEvent({
+        delay: 500,
+        loop: true,
+        callback: () => {
+          if (enemy.active && enemy.isFrozen && freezeParticles.active) {
+            freezeParticles.setPosition(enemy.x, enemy.y);
+            freezeParticles.explode(3);
+          }
+        }
+      });
       
       // 添加冰冻特效
       const freezeEffect = this.add.circle(enemy.x, enemy.y, 20, 0x00ffff, 0.5);
@@ -4593,9 +5363,42 @@ export class GameScene extends Phaser.Scene {
       const slowPercent = enemy.iceValue / 10;
       enemy.speed = enemy.originalSpeed * (1 - slowPercent);
       
-      // 视觉效果：根据寒冷值调整蓝色色调强度
-      const tintIntensity = Math.floor((enemy.iceValue / 10) * 255);
-      enemy.setTint(Phaser.Display.Color.GetColor(255 - tintIntensity, 255 - tintIntensity, 255));
+      // 视觉效果：根据减速程度显示粒子（参考燃烧效果）
+      if (enemy.iceValue > 0) {
+        if (!enemy.slowParticles) {
+          const slowParticles = this.add.particles(enemy.x, enemy.y, 'ice-bullet-sheet', {
+            frame: [0, 1, 2, 3],
+            lifespan: 500,
+            speed: { min: 20, max: 40 },
+            scale: { start: 0.2, end: 0 },
+            blendMode: 'ADD',
+            emitting: false
+          });
+          enemy.slowParticles = slowParticles;
+          
+          // 定期爆发减速粒子效果
+          enemy.slowParticleEvent = this.time.addEvent({
+            delay: 500,
+            loop: true,
+            callback: () => {
+              if (enemy.active && enemy.iceValue > 0 && slowParticles.active) {
+                slowParticles.setPosition(enemy.x, enemy.y);
+                slowParticles.explode(2); // 减速效果用较少粒子
+              }
+            }
+          });
+        }
+      } else {
+        // 寒冷值为0时清除粒子
+        if (enemy.slowParticles) {
+          enemy.slowParticles.destroy();
+          enemy.slowParticles = null;
+        }
+        if (enemy.slowParticleEvent) {
+          enemy.slowParticleEvent.remove();
+          enemy.slowParticleEvent = null;
+        }
+      }
     }
   }
   
@@ -4631,22 +5434,29 @@ export class GameScene extends Phaser.Scene {
           enemyBody.moves = true;
         }
         
-        enemy.clearTint();
+        // 清理粒子效果
+        if (enemy.freezeParticles) {
+          enemy.freezeParticles.destroy();
+          enemy.freezeParticles = null;
+        }
+        if (enemy.freezeParticleEvent) {
+          enemy.freezeParticleEvent.remove();
+          enemy.freezeParticleEvent = null;
+        }
+        if (enemy.slowParticles) {
+          enemy.slowParticles.destroy();
+          enemy.slowParticles = null;
+        }
+        if (enemy.slowParticleEvent) {
+          enemy.slowParticleEvent.remove();
+          enemy.slowParticleEvent = null;
+        }
+        
         enemy.frozenUntil = undefined;
         
         // 获得5秒冰冷抗性
         enemy.iceResistUntil = this.time.now + 5000;
         enemy.iceValue = 0; // 清空寒冷值
-        
-        // 抗性期间显示淡红色边框表示免疫
-        enemy.setTint(0xffaaaa);
-        
-        // 5秒后恢复正常颜色
-        this.time.delayedCall(5000, () => {
-          if (enemy.active && !enemy.isFrozen && enemy.iceValue === 0) {
-            enemy.clearTint();
-          }
-        });
       }
     });
   }

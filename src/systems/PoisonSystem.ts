@@ -89,6 +89,13 @@ export class PoisonSystem {
       if (currentTime - poison.lastDamageTime >= poison.interval) {
         onEnemyDamage(enemy, poison.damage);
         poison.lastDamageTime = currentTime;
+        
+        // 爆发毒素粒子效果
+        const poisonParticles = this.poisonParticles.get(enemy);
+        if (poisonParticles) {
+          poisonParticles.setPosition(enemy.x, enemy.y);
+          poisonParticles.explode(3);
+        }
 
         // 毒性扩散逻辑
         if (poison.spreadRadius > 0) {
@@ -191,25 +198,14 @@ export class PoisonSystem {
       oldEmitter.destroy();
     }
 
-    // 给敌人添加绿色色调表示中毒
-    if (enemy.setTint) {
-      enemy.setTint(0x00ff00);
-    }
-
-    // 创建绿色毒雾粒子效果
-    const particles = this.scene.add.particles(enemy.x, enemy.y, 'bullet-sheet', {
-      frame: [0, 1, 2], // 使用子弹帧作为粒子
-      lifespan: 800,
-      speed: { min: 10, max: 30 },
+    // 创建绿色毒雾粒子效果（参考燃烧效果）
+    const particles = this.scene.add.particles(enemy.x, enemy.y, 'poison-bullet-sheet', {
+      lifespan: 500,
+      speed: { min: 20, max: 40 },
       scale: { start: 0.3, end: 0 },
-      alpha: { start: 0.6, end: 0 },
-      tint: 0x00ff00, // 绿色毒性效果
-      frequency: 100,
-      blendMode: 'ADD'
+      blendMode: 'ADD',
+      emitting: false
     });
-
-    // 让粒子跟随敌人移动
-    particles.startFollow(enemy);
 
     this.poisonParticles.set(enemy, particles);
   }
@@ -218,11 +214,6 @@ export class PoisonSystem {
    * 移除中毒视觉效果
    */
   private removePoisonEffect(enemy: any): void {
-    // 移除绿色色调
-    if (enemy && enemy.active && enemy.clearTint) {
-      enemy.clearTint();
-    }
-    
     const emitter = this.poisonParticles.get(enemy);
     if (emitter) {
       emitter.stop();

@@ -50,6 +50,12 @@ export interface SkillConfig {
     
     // 毒性效果
     drug?: number;                 // 毒性伤害等级
+    
+    // 火焰效果
+    fire?: number;                 // 火焰等级
+    
+    // 风属性效果
+    wind?: number;                 // 风属性等级（击退效果）
   };
 }
 

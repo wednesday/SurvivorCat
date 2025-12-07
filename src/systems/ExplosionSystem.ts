@@ -99,16 +99,20 @@ export class ExplosionSystem {
         } else if (isPoisonExplosion) {
           hitTint = 0x00ff00; // 毒性绿色
         }
-        this.scene.tweens.add({
-          targets: enemy,
+        
+        // 使用粒子效果而不是染色
+        const hitParticles = this.scene.add.particles(enemy.x, enemy.y, 'bullet-sheet', {
+          frame: [0, 1, 2],
+          lifespan: 300,
+          speed: { min: 20, max: 40 },
+          scale: { start: 0.3, end: 0 },
           tint: hitTint,
-          duration: 150,
-          yoyo: true,
-          onComplete: () => {
-            if (enemy.active) {
-              enemy.clearTint();
-            }
-          }
+          blendMode: 'ADD',
+          emitting: false
+        });
+        hitParticles.explode(6);
+        this.scene.time.delayedCall(400, () => {
+          hitParticles.destroy();
         });
       }
     });

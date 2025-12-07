@@ -303,6 +303,14 @@ export class EquipmentDetailRenderer {
       yOffset += 22;
     }
 
+    // 斥力效果（守护球扔出）
+    if (effects.repulsion) {
+      this.container!.add(this.scene.add.text(leftMargin, yOffset, '守护球会被扔向敌人', {
+        fontSize: '15px', color: '#ff00ff', fontFamily: 'Arial'
+      }));
+      yOffset += 22;
+    }
+
     return yOffset;
   }
 
