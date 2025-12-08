@@ -6,6 +6,8 @@ import { ExplosionSystem } from "../systems/ExplosionSystem";
 import { PoisonSystem } from "../systems/PoisonSystem";
 import { EnemyManager, Enemy } from "../systems/EnemyManager";
 import { PlayerSystem } from "../systems/PlayerSystem";
+import { GameUISystem } from "../systems/GameUISystem";
+import { PauseUISystem } from "../systems/PauseUISystem";
 import { getRandomSkills, SkillConfig } from "../config/SkillConfig";
 import { EQUIPMENT_CONFIGS, getEquipmentById } from '../config/EquipmentConfig';
 import { rollAffixes, AffixInstance, rollEquipmentQuality, Rarity, getQualityColor, generateEquipmentName } from '../config/AffixConfig';
@@ -27,6 +29,8 @@ export class GameScene extends Phaser.Scene {
   // 系统管理
   private skillManager!: SkillManager;
   private playerSystem!: PlayerSystem;
+  private gameUISystem!: GameUISystem;
+  private pauseUISystem!: PauseUISystem;
   private explosionSystem!: ExplosionSystem;
   private poisonSystem!: PoisonSystem;
   private enemyManager!: EnemyManager;
@@ -98,15 +102,6 @@ export class GameScene extends Phaser.Scene {
   private mapWidth = 3000;
   private mapHeight = 3000;
 
-  // UI 文本
-  private hpText!: Phaser.GameObjects.Text;
-  private levelText!: Phaser.GameObjects.Text;
-  private expText!: Phaser.GameObjects.Text;
-  private timeText!: Phaser.GameObjects.Text;
-  private killText!: Phaser.GameObjects.Text;
-  private diffText!: Phaser.GameObjects.Text;
-  private coinText!: Phaser.GameObjects.Text;
-
   // 音乐控制
   private normalBgm!: Phaser.Sound.BaseSound | null;
   private bossBgm!: Phaser.Sound.BaseSound | null;
@@ -117,10 +112,6 @@ export class GameScene extends Phaser.Scene {
 
   // 暂停相关
   private isPaused = false;
-  private pauseOverlay!: Phaser.GameObjects.Rectangle;
-  private pauseText!: Phaser.GameObjects.Text;
-  private pauseHintText!: Phaser.GameObjects.Text;
-  private pauseStatsPanel: Phaser.GameObjects.Container | null = null;
   private isUpgrading = false; // 防止升级UI重叠
 
   constructor() {
@@ -585,118 +576,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   createUI() {
-    const style = { fontSize: "18px", color: "#ffffff", fontFamily: "Arial" };
-
-    this.hpText = this.add.text(
-      10,
-      10,
-      `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`,
-      style
+    // 初始化游戏UI系统
+    this.gameUISystem = new GameUISystem(this, this.playerSystem);
+    this.gameUISystem.create(
+      this.gameDifficulty,
+      this.difficultyLevel,
+      this.killCount,
+      this.coinsCollected
     );
-    this.levelText = this.add.text(10, 35, `Level: ${this.playerSystem.getLevel()}`, style);
-    this.expText = this.add.text(
-      10,
-      60,
-      `EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`,
-      style
-    );
-    this.timeText = this.add.text(10, 85, `Time: 0:00`, style);
-    this.killText = this.add.text(10, 110, `Kills: ${this.killCount}`, style);
-    this.coinText = this.add.text(10, 135, `Coins: ${this.coinsCollected}`, {
-      fontSize: "18px",
-      color: "#ffd700",
-      fontFamily: "Arial",
-    });
-    this.coinText.setScrollFactor(0);
 
-    // 添加游戏难度显示（带颜色）
-    const difficultyName = getDifficultyName(this.gameDifficulty);
-    const difficultyColor = getDifficultyColor(this.gameDifficulty);
-    this.diffText = this.add.text(
-      10,
-      160,
-      `游戏难度: ${difficultyName} | 波数: ${this.difficultyLevel}`,
-      {
-        fontSize: "18px",
-        color: difficultyColor,
-        fontFamily: "Arial",
-        fontStyle: "bold"
-      }
-    );
-    this.diffText.setScrollFactor(0);
-
-    // 添加暂停提示
-    const pauseHint = this.add.text(
-      this.cameras.main.width - 10,
-      10,
-      "ESC/P: 暂停",
-      {
-        fontSize: "14px",
-        color: "#888888",
-        fontFamily: "Arial",
-      }
-    );
-    pauseHint.setOrigin(1, 0);
-    pauseHint.setScrollFactor(0);
-
-    // 设置 UI 为固定位置
-    this.hpText.setScrollFactor(0);
-    this.levelText.setScrollFactor(0);
-    this.expText.setScrollFactor(0);
-    this.timeText.setScrollFactor(0);
-    this.killText.setScrollFactor(0);
-
-    // 创建暂停UI（初始隐藏）
-    this.createPauseUI();
-  }
-
-  createPauseUI() {
-    // 半透明黑色遮罩
-    this.pauseOverlay = this.add.rectangle(
-      0,
-      0,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      0x000000,
-      0.7
-    );
-    this.pauseOverlay.setOrigin(0);
-    this.pauseOverlay.setScrollFactor(0);
-    this.pauseOverlay.setDepth(1000);
-    this.pauseOverlay.setVisible(false);
-
-    // 暂停文字
-    this.pauseText = this.add.text(
-      this.cameras.main.centerX - 250,
-      this.cameras.main.centerY - 200,
-      "游戏已暂停",
-      {
-        fontSize: "48px",
-        color: "#ffffff",
-        fontFamily: "Arial",
-        fontStyle: "bold",
-      }
-    );
-    this.pauseText.setOrigin(0.5);
-    this.pauseText.setScrollFactor(0);
-    this.pauseText.setDepth(1001);
-    this.pauseText.setVisible(false);
-
-    // 提示文字
-    this.pauseHintText = this.add.text(
-      this.cameras.main.centerX - 250,
-      this.cameras.main.centerY + 220,
-      "按 ESC 或 P 键继续游戏",
-      {
-        fontSize: "24px",
-        color: "#ffff00",
-        fontFamily: "Arial",
-      }
-    );
-    this.pauseHintText.setOrigin(0.5);
-    this.pauseHintText.setScrollFactor(0);
-    this.pauseHintText.setDepth(1001);
-    this.pauseHintText.setVisible(false);
+    // 初始化暂停UI系统
+    this.pauseUISystem = new PauseUISystem(this, this.skillManager);
+    this.pauseUISystem.create();
   }
 
   // 初始化音乐
@@ -866,107 +757,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   togglePause() {
-    this.isPaused = !this.isPaused;
+    const wasPaused = this.isPaused;
+    this.isPaused = this.pauseUISystem.toggle(this.orbitals.length);
 
-    if (this.isPaused) {
+    if (this.isPaused && !wasPaused) {
       // 暂停游戏
       this.physics.pause();
-      this.pauseOverlay.setVisible(true);
-      this.pauseText.setVisible(true);
-      this.pauseHintText.setVisible(true);
-      
-      // 创建技能统计面板
-      this.createPauseStatsPanel();
-
-      // 添加闪烁效果
-      this.tweens.add({
-        targets: this.pauseHintText,
-        alpha: 0.3,
-        duration: 500,
-        yoyo: true,
-        repeat: -1,
-      });
-    } else {
+    } else if (!this.isPaused && wasPaused) {
       // 恢复游戏
       this.physics.resume();
-      this.pauseOverlay.setVisible(false);
-      this.pauseText.setVisible(false);
-      this.pauseHintText.setVisible(false);
-      
-      // 销毁技能统计面板
-      if (this.pauseStatsPanel) {
-        this.pauseStatsPanel.destroy();
-        this.pauseStatsPanel = null;
-      }
-
-      // 停止闪烁效果
-      this.tweens.killTweensOf(this.pauseHintText);
-      this.pauseHintText.setAlpha(1);
     }
-  }
-  
-  createPauseStatsPanel() {
-    const centerX = this.cameras.main.centerX;
-    const centerY = this.cameras.main.centerY;
-    
-    // 创建容器（右侧）
-    this.pauseStatsPanel = this.add.container(centerX + 250, centerY);
-    this.pauseStatsPanel.setScrollFactor(0);
-    this.pauseStatsPanel.setDepth(1002);
-    
-    // 面板背景
-    const panelBg = this.add.rectangle(0, 0, 450, 550, 0x222222, 0.95);
-    panelBg.setStrokeStyle(4, 0xffaa00);
-    this.pauseStatsPanel.add(panelBg);
-    
-    // 标题
-    const title = this.add.text(0, -230, '技能统计', {
-      fontSize: '32px',
-      color: '#ffaa00',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    });
-    title.setOrigin(0.5);
-    this.pauseStatsPanel.add(title);
-    
-    // 统计数据
-    const stats = [
-      { label: '移动速度', value: this.skillManager.stats.moveSpeed.toFixed(0) },
-      { label: '子弹数量', value: this.skillManager.stats.projectileCount.toString() },
-      { label: '子弹伤害', value: this.skillManager.stats.projectileDamage.toString() },
-      { label: '攻击速度', value: (1000 / this.skillManager.getProjectileRate(1000)).toFixed(2) + '/s' },
-      { label: '守护球数量', value: this.orbitals.length.toString() },
-      { label: '守护球伤害', value: this.skillManager.stats.orbitalDamage.toString() },
-      { label: '轨道轨道半径', value: this.skillManager.stats.orbitalRadius.toString() },
-      { label: '激光数量', value: this.skillManager.stats.laserCount.toString() },
-      { label: '激光伤害', value: this.skillManager.stats.laserDamage.toString() },
-      { label: '拾取范围', value: this.skillManager.stats.pickupRange.toFixed(0) },
-      { label: '经验加成', value: (this.skillManager.stats.expGainMultiplier * 100).toFixed(0) + '%' },
-      { label: '爆炸几率', value: this.skillManager.stats.explosionEnabled 
-          ? (this.skillManager.stats.explosionChance * 100).toFixed(0) + '%' 
-          : '未解锁' },
-      { label: '爆炸伤害', value: this.skillManager.stats.explosionEnabled 
-          ? this.skillManager.stats.explosionDamage.toString() 
-          : '未解锁' }
-    ];
-    
-    // 显示统计项（单列布局）
-    const startY = -180;
-    const lineHeight = 28;
-    
-    stats.forEach((stat, index) => {
-      const y = startY + index * lineHeight;
-      
-      const text = this.add.text(0, y, `${stat.label}: ${stat.value}`, {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontFamily: 'Arial'
-      });
-      text.setOrigin(0.5, 0.5);
-      if (this.pauseStatsPanel) {
-        this.pauseStatsPanel.add(text);
-      }
-    });
   }
 
 
@@ -1638,7 +1438,7 @@ export class GameScene extends Phaser.Scene {
 
       enemy.destroy();
       this.killCount++;
-      this.killText.setText(`Kills: ${this.killCount}`);
+      this.gameUISystem.updateKills(this.killCount);
     }
   }
 
@@ -1704,7 +1504,7 @@ export class GameScene extends Phaser.Scene {
 
       enemy.destroy();
       this.killCount++;
-      this.killText.setText(`Kills: ${this.killCount}`);
+      this.gameUISystem.updateKills(this.killCount);
     }
   }
 
@@ -1794,7 +1594,7 @@ export class GameScene extends Phaser.Scene {
 
       enemy.destroy();
       this.killCount++;
-      this.killText.setText(`Kills: ${this.killCount}`);
+      this.gameUISystem.updateKills(this.killCount);
     }
   }
 
@@ -1815,7 +1615,7 @@ export class GameScene extends Phaser.Scene {
     // 对玩家造成伤害并更新 UI（使用怪物的实际伤害值）
     const enemyDamage = (enemy as any).damage || 10;
     this.playerSystem.takeDamage(enemyDamage, knockbackAngle);
-    this.hpText.setText(`HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`);
+    this.gameUISystem.updateHP();
 
     // 对敌人施加向外击退 - 直接改变位置而不是速度
     const body = enemy.body as Phaser.Physics.Arcade.Body;
@@ -1852,9 +1652,7 @@ export class GameScene extends Phaser.Scene {
     projectile.destroy();
     
     this.playerSystem.takeDamage(damage);
-    this.hpText.setText(
-      `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
-    );
+    this.gameUISystem.updateHP();
 
     if (this.playerSystem.isDead()) {
       this.gameOver();
@@ -1993,7 +1791,7 @@ export class GameScene extends Phaser.Scene {
       orb.expValue * this.skillManager.stats.expGainMultiplier * diffConfig.expMultiplier
     );
     const didLevelUp = this.playerSystem.addExp(expGained);
-    this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
+    this.gameUISystem.updateExp();
 
     if (didLevelUp) {
       this.levelUp();
@@ -2023,7 +1821,7 @@ export class GameScene extends Phaser.Scene {
     const diffConfig = getDifficultyConfig(this.gameDifficulty);
     const finalCoinValue = Math.ceil(coinValue * diffConfig.coinMultiplier);
     this.coinsCollected += finalCoinValue;
-    this.coinText.setText(`Coins: ${this.coinsCollected}`);
+    this.gameUISystem.updateCoins(this.coinsCollected);
 
     // 收集音效提示（可选）
     const text = this.add.text(coin.x, coin.y - 20, `+${finalCoinValue}`, {
@@ -2112,7 +1910,7 @@ export class GameScene extends Phaser.Scene {
           onComplete: () => {
             if (orb.active && this.scene.isActive()) {
               const didLevelUp = this.playerSystem.addExp(orb.expValue);
-              this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
+              this.gameUISystem.updateExp();
               orb.destroy();
 
               if (didLevelUp) {
@@ -3352,7 +3150,7 @@ export class GameScene extends Phaser.Scene {
 
       enemy.destroy();
       this.killCount++;
-      this.killText.setText(`Kills: ${this.killCount}`);
+      this.gameUISystem.updateKills(this.killCount);
     }
   }
 
@@ -3488,8 +3286,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.levelText.setText(`Level: ${this.playerSystem.getLevel()}`);
-    this.expText.setText(`EXP: ${this.playerSystem.getExp()}/${this.playerSystem.getExpToNextLevel()}`);
+    this.gameUISystem.updateLevel();
+    this.gameUISystem.updateExp();
 
     // 暂停游戏并显示升级选项
     this.physics.pause();
@@ -3718,7 +3516,7 @@ export class GameScene extends Phaser.Scene {
 
         // 再次升级
         this.playerSystem.setLevel(this.playerSystem.getLevel() + 1);
-        this.levelText.setText(`Level: ${this.playerSystem.getLevel()}`);
+        this.gameUISystem.updateLevel();
 
         // 升级特效（紫色）
         const circle = this.add.circle(
@@ -3899,16 +3697,12 @@ export class GameScene extends Phaser.Scene {
     // 特殊处理 - 生命恢复
     if (skill.effects?.hpRegen) {
       this.playerSystem.setHP(this.playerSystem.getMaxHP());
-      this.hpText.setText(
-        `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
-      );
+      this.gameUISystem.updateHP();
     }
 
     // 如果增加了最大生命值，更新状态面板显示
     if (skill.effects?.maxHP) {
-      this.hpText.setText(
-        `HP: ${this.playerSystem.getHP()}/${this.playerSystem.getMaxHP()}`
-      );
+      this.gameUISystem.updateHP();
     }
 
     // 如果是轨道类技能，需要同步守护球数量
@@ -4004,23 +3798,7 @@ export class GameScene extends Phaser.Scene {
     this.isUpgrading = false;
     
     // 重置暂停UI状态
-    if (this.pauseOverlay) {
-      this.pauseOverlay.setVisible(false);
-    }
-    if (this.pauseText) {
-      this.pauseText.setVisible(false);
-    }
-    if (this.pauseHintText) {
-      this.pauseHintText.setVisible(false);
-      // 停止任何正在进行的闪烁动画
-      this.tweens.killTweensOf(this.pauseHintText);
-      this.pauseHintText.setAlpha(1);
-    }
-    // 清理暂停统计面板
-    if (this.pauseStatsPanel) {
-      this.pauseStatsPanel.destroy();
-      this.pauseStatsPanel = null;
-    }
+    this.pauseUISystem.reset();
     
     // 重置游戏进度变量
     this.difficultyLevel = 1;
@@ -4265,16 +4043,7 @@ export class GameScene extends Phaser.Scene {
         await SaveManager.setDifficulty(nextDifficulty as DifficultyLevel);
         this.gameDifficulty = nextDifficulty as DifficultyLevel;
         // 更新难度显示颜色与文本
-        try {
-          const diffName = getDifficultyName(this.gameDifficulty);
-          const diffColor = getDifficultyColor(this.gameDifficulty);
-          if (this.diffText) {
-            this.diffText.setText(`游戏难度: ${diffName} | 波数: ${this.difficultyLevel}`);
-            this.diffText.setStyle({ color: diffColor as any });
-          }
-        } catch (e) {
-          // ignore UI update failures
-        }
+        this.gameUISystem.updateDifficulty(this.gameDifficulty, this.difficultyLevel);
       }
     } catch (e) {
       console.warn('[gameVictory] Failed to persist selected difficulty', e);
@@ -5060,11 +4829,6 @@ export class GameScene extends Phaser.Scene {
     // 更新游戏时间（暂停时不增加）
     if (!this.isPaused) {
       this.gameTime += delta / 1000;
-      const minutes = Math.floor(this.gameTime / 60);
-      const seconds = Math.floor(this.gameTime % 60);
-      this.timeText.setText(
-        `Time: ${minutes}:${seconds.toString().padStart(2, "0")}`
-      );
 
       // 每3分钟提升难度
       if (
@@ -5086,10 +4850,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 更新难度显示
-    const difficultyName = getDifficultyName(this.gameDifficulty);
-    const difficultyColor = getDifficultyColor(this.gameDifficulty);
-    this.diffText.setText(`游戏难度: ${difficultyName} | 波数: ${this.difficultyLevel}`);
-    this.diffText.setStyle({ color: difficultyColor });
+    this.gameUISystem.updateDifficulty(this.gameDifficulty, this.difficultyLevel);
 
     // 显示难度提升提示
     const diffText = this.add.text(

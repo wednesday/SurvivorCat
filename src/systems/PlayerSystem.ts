@@ -162,8 +162,10 @@ export class PlayerSystem {
       },
     });
 
-    // 播放升级音效
-    this.scene.sound.play("levelup", { volume: 0.3 });
+    // 播放升级音效（如果存在）
+    if (this.scene.sound.get("levelup")) {
+      this.scene.sound.play("levelup", { volume: 0.3 });
+    }
   }
 
   /**
@@ -207,8 +209,10 @@ export class PlayerSystem {
       repeat: 4,
     });
 
-    // 播放受伤音效
-    this.scene.sound.play("player_hit", { volume: 0.2 });
+    // 播放受伤音效（如果存在）
+    if (this.scene.sound.get("player_hit")) {
+      this.scene.sound.play("player_hit", { volume: 0.2 });
+    }
   }
 
   /**
