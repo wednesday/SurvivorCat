@@ -4829,6 +4829,7 @@ export class GameScene extends Phaser.Scene {
     // 更新游戏时间（暂停时不增加）
     if (!this.isPaused) {
       this.gameTime += delta / 1000;
+      this.gameUISystem.updateTime(this.gameTime);
 
       // 每3分钟提升难度
       if (
